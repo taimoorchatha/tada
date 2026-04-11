@@ -146,14 +146,15 @@ describe("getToday", () => {
     expect(result).toHaveLength(0);
   });
 
-  it("excludes todos with no scheduled date or deadline", () => {
+  it("includes undated todos (no scheduled date or deadline)", () => {
     const store = emptyStore();
     store.todos = [
       makeTodo({ id: "nodate01" }),
     ];
 
     const result = getToday(store);
-    expect(result).toHaveLength(0);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("nodate01");
   });
 
   it("excludes subtasks", () => {
@@ -166,6 +167,44 @@ describe("getToday", () => {
     const result = getToday(store);
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("parent01");
+  });
+
+  it("excludes future-scheduled todos", () => {
+    const store = emptyStore();
+    store.todos = [
+      makeTodo({ id: "future01", scheduledDate: futureDate(5) }),
+    ];
+
+    const result = getToday(store);
+    expect(result).toHaveLength(0);
+  });
+
+  it("includes mix of undated, scheduled, and overdue todos", () => {
+    const store = emptyStore();
+    store.todos = [
+      makeTodo({ id: "undated1" }),
+      makeTodo({ id: "today001", scheduledDate: todayStr() }),
+      makeTodo({ id: "overdue1", deadline: pastDate(1) }),
+      makeTodo({ id: "future01", scheduledDate: futureDate(3) }),
+    ];
+
+    const result = getToday(store);
+    expect(result).toHaveLength(3);
+    const ids = result.map((t) => t.id);
+    expect(ids).toContain("undated1");
+    expect(ids).toContain("today001");
+    expect(ids).toContain("overdue1");
+    expect(ids).not.toContain("future01");
+  });
+
+  it("excludes completed undated todos", () => {
+    const store = emptyStore();
+    store.todos = [
+      makeTodo({ id: "done0001", status: "completed" }),
+    ];
+
+    const result = getToday(store);
+    expect(result).toHaveLength(0);
   });
 });
 

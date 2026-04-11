@@ -46,7 +46,7 @@ export function TodoItem({ todo, isSelected, project, subtaskProgress, expandInd
       {priority ? <Text color={priorityColor}>{priority} </Text> : null}
       <Text
         bold={todo.status === "open"}
-        color={todo.status === "completed" ? colors.fgDim : colors.fg}
+        color={todo.status === "completed" ? colors.fgDim : (priorityColor ?? colors.fg)}
         strikethrough={todo.status === "completed"}
       >
         {todo.title}

@@ -147,7 +147,7 @@ export function TodoDetail({ todo, data, subtasks = [] }: TodoDetailProps) {
       </Box>
 
       <Box marginTop={1}>
-        <Text color={colors.fgDim}>Esc to close  d:done  x:delete  e:edit</Text>
+        <Text color={colors.fgDim}>Esc:close  d:done  e:edit  w:schedule  m:move  x:delete  ?:help</Text>
       </Box>
     </Box>
   );

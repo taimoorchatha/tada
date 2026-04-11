@@ -1,7 +1,7 @@
 {
   "name": "@tchatha/tadacli",
   "version": "0.1.2",
-  "description": "A CLI todo manager with TUI and MCP server for AI assistants.",
+  "description": "A CLI todo app.",
   "type": "module",
   "bin": {
     "tada": "./dist/cli/index.js"

@@ -7,8 +7,7 @@ import { Sidebar } from "./components/Sidebar.js";
 import { MainPanel, getViewItems } from "./components/MainPanel.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { TodoDetail } from "./components/TodoDetail.js";
-import { QuickAdd } from "./components/QuickAdd.js";
-import type { ParsedInput } from "./components/QuickAdd.js";
+import { QuickAdd, type ParsedInput } from "./components/QuickAdd.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.js";
 import { ProjectPicker } from "./components/ProjectPicker.js";
 import { getProjectRows } from "./components/ProjectList.js";
@@ -18,13 +17,15 @@ import { addTodo, completeTodo, reopenTodo, deleteTodo, updateTodo, getSubtasks 
 import { createProject, deleteProject } from "../core/project.js";
 import type { Todo } from "../core/types.js";
 import type { SortMode } from "../core/views.js";
-import { format } from "date-fns";
+import { format, addDays, addWeeks } from "date-fns";
 import { colors } from "./theme.js";
 
 import { HelpDialog } from "./components/HelpDialog.js";
 import { ProjectAdd } from "./components/ProjectAdd.js";
+import { EditTodo } from "./components/EditTodo.js";
+import { SchedulePicker } from "./components/SchedulePicker.js";
 
-type InputMode = null | "quickadd" | "confirm" | "search" | "detail" | "move" | "help" | "createproject";
+type InputMode = null | "quickadd" | "confirm" | "search" | "detail" | "move" | "help" | "createproject" | "edit" | "schedule";
 
 export function App() {
   const { exit } = useApp();
@@ -48,11 +49,19 @@ export function App() {
   const [moveCursor, setMoveCursor] = useState(0);
   const [moveTodo, setMoveTodo] = useState<Todo | null>(null);
 
+  // Edit state
+  const [editTodo, setEditTodo] = useState<Todo | null>(null);
+
+  // Schedule state
+  const [scheduleTodo, setScheduleTodo] = useState<Todo | null>(null);
+  const [scheduleDate, setScheduleDate] = useState<string | null>(null);
+
   // Subtask parent for Shift+A
   const subtaskParentRef = useRef<string | null>(null);
 
   // Confirm action stored in ref to avoid stale closure issues
   const confirmActionRef = useRef<(() => void) | null>(null);
+  const [confirmMessage, setConfirmMessage] = useState("Delete this item?");
 
   // Get current item count for selection
   const getItemCount = useCallback(() => {
@@ -192,6 +201,7 @@ export function App() {
           setInputMode(null);
           confirmActionRef.current = null;
         };
+        setConfirmMessage(`Delete project "${project.title}"?`);
         setInputMode("confirm");
         return;
       }
@@ -204,6 +214,7 @@ export function App() {
       setInputMode(null);
       confirmActionRef.current = null;
     };
+    setConfirmMessage(`Delete todo "${todo.title}"?`);
     setInputMode("confirm");
   }, [getSelectedTodo, mutate, flash, nav.view, data, expandedProjectId, showCompleted, sortMode, selection.cursor]);
 
@@ -242,6 +253,30 @@ export function App() {
     flash(`Created project "${title}"`);
   }, [mutate, flash]);
 
+  // Handle edit submit
+  const handleEditSubmit = useCallback(async (parsed: ParsedInput) => {
+    if (!editTodo || !parsed.title) {
+      setInputMode(null);
+      setEditTodo(null);
+      return;
+    }
+    const updates: Record<string, any> = { title: parsed.title };
+    if (parsed.tags.length > 0) updates.tags = parsed.tags;
+    if (parsed.priority !== "none") updates.priority = parsed.priority;
+    if (parsed.scheduledDate !== null) updates.scheduledDate = parsed.scheduledDate;
+    if (parsed.deadline !== null) updates.deadline = parsed.deadline;
+    if (parsed.projectName) {
+      const p = data.projects.find(
+        (proj) => proj.title.toLowerCase() === parsed.projectName!.toLowerCase(),
+      );
+      if (p) updates.projectId = p.id;
+    }
+    await mutate((store) => updateTodo(store, editTodo.id, updates));
+    flash(`Updated "${parsed.title}"`);
+    setInputMode(null);
+    setEditTodo(null);
+  }, [editTodo, data, mutate, flash]);
+
   // Keyboard handler
   useInput((input, key) => {
     // Handle confirm dialog
@@ -272,11 +307,91 @@ export function App() {
       return;
     }
 
+    // Handle schedule picker
+    if (inputMode === "schedule") {
+      if (key.escape) {
+        setInputMode(null);
+        setScheduleTodo(null);
+        setScheduleDate(null);
+      } else if (input === "t") {
+        const d = format(new Date(), "yyyy-MM-dd");
+        setScheduleDate(d);
+        if (scheduleTodo) {
+          mutate((store) => updateTodo(store, scheduleTodo.id, { scheduledDate: d }));
+          flash(`Scheduled for today`);
+          setInputMode(null);
+          setScheduleTodo(null);
+          setScheduleDate(null);
+        }
+      } else if (input === "T") {
+        const d = format(addDays(new Date(), 1), "yyyy-MM-dd");
+        setScheduleDate(d);
+        if (scheduleTodo) {
+          mutate((store) => updateTodo(store, scheduleTodo.id, { scheduledDate: d }));
+          flash(`Scheduled for tomorrow`);
+          setInputMode(null);
+          setScheduleTodo(null);
+          setScheduleDate(null);
+        }
+      } else if (input === "n") {
+        const d = format(addWeeks(new Date(), 1), "yyyy-MM-dd");
+        setScheduleDate(d);
+        if (scheduleTodo) {
+          mutate((store) => updateTodo(store, scheduleTodo.id, { scheduledDate: d }));
+          flash(`Scheduled for next week`);
+          setInputMode(null);
+          setScheduleTodo(null);
+          setScheduleDate(null);
+        }
+      } else if ((input === "+" || input === "=") && scheduleTodo) {
+        const base = scheduleDate ?? scheduleTodo.scheduledDate ?? format(new Date(), "yyyy-MM-dd");
+        const d = format(addDays(new Date(base + "T00:00:00"), 1), "yyyy-MM-dd");
+        setScheduleDate(d);
+        mutate((store) => updateTodo(store, scheduleTodo.id, { scheduledDate: d }));
+        flash(`Scheduled for ${d}`);
+      } else if (input === "-" && scheduleTodo) {
+        const base = scheduleDate ?? scheduleTodo.scheduledDate ?? format(new Date(), "yyyy-MM-dd");
+        const d = format(addDays(new Date(base + "T00:00:00"), -1), "yyyy-MM-dd");
+        setScheduleDate(d);
+        mutate((store) => updateTodo(store, scheduleTodo.id, { scheduledDate: d }));
+        flash(`Scheduled for ${d}`);
+      } else if (input === "]" && scheduleTodo) {
+        const base = scheduleDate ?? scheduleTodo.scheduledDate ?? format(new Date(), "yyyy-MM-dd");
+        const d = format(addWeeks(new Date(base + "T00:00:00"), 1), "yyyy-MM-dd");
+        setScheduleDate(d);
+        mutate((store) => updateTodo(store, scheduleTodo.id, { scheduledDate: d }));
+        flash(`Scheduled for ${d}`);
+      } else if (input === "[" && scheduleTodo) {
+        const base = scheduleDate ?? scheduleTodo.scheduledDate ?? format(new Date(), "yyyy-MM-dd");
+        const d = format(addWeeks(new Date(base + "T00:00:00"), -1), "yyyy-MM-dd");
+        setScheduleDate(d);
+        mutate((store) => updateTodo(store, scheduleTodo.id, { scheduledDate: d }));
+        flash(`Scheduled for ${d}`);
+      } else if (key.backspace || key.delete) {
+        if (scheduleTodo) {
+          mutate((store) => updateTodo(store, scheduleTodo.id, { scheduledDate: null, deadline: null }));
+          flash(`Cleared all dates`);
+          setInputMode(null);
+          setScheduleTodo(null);
+          setScheduleDate(null);
+        }
+      }
+      return;
+    }
+
     // Don't handle keys during text input modes
     if (inputMode === "quickadd") {
       if (key.escape) {
         setInputMode(null);
         subtaskParentRef.current = null;
+      }
+      return;
+    }
+
+    if (inputMode === "edit") {
+      if (key.escape) {
+        setInputMode(null);
+        setEditTodo(null);
       }
       return;
     }
@@ -329,11 +444,24 @@ export function App() {
           setDetailTodo(null);
           confirmActionRef.current = null;
         };
+        setConfirmMessage(`Delete todo "${todo.title}"?`);
         setInputMode("confirm");
+      } else if (input === "e" && detailTodo) {
+        setEditTodo(detailTodo);
+        setInputMode("edit");
+        setDetailTodo(null);
+      } else if (input === "w" && detailTodo && detailTodo.status === "open") {
+        setScheduleTodo(detailTodo);
+        setScheduleDate(detailTodo.scheduledDate);
+        setInputMode("schedule");
+        setDetailTodo(null);
       } else if (input === "m" && detailTodo && detailTodo.status === "open") {
         setMoveTodo(detailTodo);
         setMoveCursor(0);
         setInputMode("move");
+        setDetailTodo(null);
+      } else if (input === "?") {
+        setInputMode("help");
         setDetailTodo(null);
       }
       return;
@@ -415,8 +543,29 @@ export function App() {
       handleComplete();
     } else if (input === "x") {
       handleDelete();
+    } else if (input === "e") {
+      const todo = getSelectedTodo();
+      if (todo) {
+        setEditTodo(todo);
+        setInputMode("edit");
+      }
     } else if (input === "m") {
       handleStartMove();
+    } else if (input === "w") {
+      const todo = getSelectedTodo();
+      if (todo && todo.status === "open") {
+        setScheduleTodo(todo);
+        setScheduleDate(todo.scheduledDate);
+        setInputMode("schedule");
+      }
+    } else if (input === "!") {
+      const todo = getSelectedTodo();
+      if (todo && todo.status === "open") {
+        const cycle = { none: "low", low: "medium", medium: "high", high: "none" } as const;
+        const next = cycle[todo.priority];
+        mutate((store) => updateTodo(store, todo.id, { priority: next }));
+        flash(next === "none" ? "Cleared priority" : `Priority: ${next}`);
+      }
     } else if (input === "s") {
       setSortMode((m) => {
         const next = m === "created" ? "alpha" : m === "alpha" ? "due" : "created";
@@ -535,9 +684,26 @@ export function App() {
         />
       )}
 
+      {/* Edit todo input */}
+      {inputMode === "edit" && editTodo && (
+        <EditTodo
+          todo={editTodo}
+          onSubmit={handleEditSubmit}
+          onCancel={() => { setInputMode(null); setEditTodo(null); }}
+        />
+      )}
+
       {/* Create project input */}
       {inputMode === "createproject" && (
         <ProjectAdd onSubmit={handleCreateProject} onCancel={() => setInputMode(null)} />
+      )}
+
+      {/* Schedule picker */}
+      {inputMode === "schedule" && scheduleTodo && (
+        <SchedulePicker
+          todoTitle={scheduleTodo.title}
+          currentDate={scheduleDate}
+        />
       )}
 
       {/* Move to project picker */}
@@ -554,7 +720,7 @@ export function App() {
 
       {/* Confirm dialog */}
       {inputMode === "confirm" && (
-        <ConfirmDialog message="Delete this item?" />
+        <ConfirmDialog message={confirmMessage} />
       )}
 
       {/* Status bar */}

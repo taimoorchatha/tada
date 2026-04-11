@@ -1,7 +1,8 @@
 import type { Command } from "commander";
 import { Store, getInbox } from "../../core/index.js";
 import type { SortMode } from "../../core/index.js";
-import { formatTodoList, formatError } from "../formatters.js";
+import { formatError } from "../formatters.js";
+import { renderMiniView } from "../mini-view.js";
 
 export function registerListCommand(program: Command) {
   program
@@ -14,7 +15,7 @@ export function registerListCommand(program: Command) {
         const store = new Store();
         const data = await store.load();
         const todos = getInbox(data, opts.sort as SortMode);
-        console.log(formatTodoList(todos, "Inbox"));
+        console.log(renderMiniView("INBOX", todos));
       } catch (err: any) {
         console.error(formatError(err.message));
         process.exit(1);

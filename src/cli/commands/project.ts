@@ -1,21 +1,18 @@
 import type { Command } from "commander";
-import chalk from "chalk";
 import {
   Store,
   createProject,
-  listProjects,
   getProject,
   completeProject,
   deleteProject,
   getProjectTodos,
 } from "../../core/index.js";
 import {
-  formatProjectLine,
   formatProjectDetail,
   formatSuccess,
-  formatEmpty,
   formatError,
 } from "../formatters.js";
+import { renderMiniProjectView } from "../mini-view.js";
 
 export function registerProjectCommand(program: Command) {
   const cmd = program
@@ -54,32 +51,11 @@ export function registerProjectCommand(program: Command) {
     .command("list")
     .alias("ls")
     .description("List active projects")
-    .option("--all", "Include completed projects")
-    .action(async (opts) => {
+    .action(async () => {
       try {
         const store = new Store();
         const data = await store.load();
-
-        const filter = opts.all ? { status: undefined } : undefined;
-        const projects = opts.all ? data.projects : listProjects(data, filter);
-
-        if (projects.length === 0) {
-          console.log(formatEmpty("No projects"));
-          return;
-        }
-
-        console.log("");
-        console.log(`  ${chalk.white.bold("Projects")}  ${chalk.dim(`(${projects.length})`)}`);
-        console.log("");
-
-        for (const project of projects) {
-          const todoCount = data.todos.filter(
-            (t) => t.status === "open" && t.projectId === project.id,
-          ).length;
-          console.log(`  ${formatProjectLine(project, todoCount)}`);
-        }
-
-        console.log("");
+        console.log(renderMiniProjectView(data));
       } catch (err: any) {
         console.error(formatError(err.message));
         process.exit(1);

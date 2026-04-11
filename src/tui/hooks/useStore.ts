@@ -22,6 +22,14 @@ export function useStore() {
     try {
       return new Store(mode);
     } catch {
+      // Local store not found — fall back to global
+      if (mode === "local") {
+        try {
+          return new Store("global");
+        } catch {
+          return null;
+        }
+      }
       return null;
     }
   });
@@ -30,7 +38,7 @@ export function useStore() {
 
   useEffect(() => {
     if (!store) {
-      setError('No .tada/ directory found. Run "tada init" first.');
+      setError("Could not open store.");
       setLoading(false);
       return;
     }

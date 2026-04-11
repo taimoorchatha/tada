@@ -44,8 +44,9 @@ export function getToday(store: TadaStore, sort: SortMode = "created"): Todo[] {
 
     const scheduled = t.scheduledDate && t.scheduledDate <= d;
     const due = t.deadline && t.deadline <= d;
+    const undated = !t.scheduledDate && !t.deadline;
 
-    if (scheduled || due) {
+    if (scheduled || due || undated) {
       seen.add(t.id);
       result.push(t);
     }

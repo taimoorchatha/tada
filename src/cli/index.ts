@@ -18,22 +18,8 @@ import { registerSearchCommand } from "./commands/search.js";
 import { registerProjectCommand } from "./commands/project.js";
 import { registerAreaCommand } from "./commands/area.js";
 import { registerStoresCommand } from "./commands/stores.js";
-import { createInterface } from "node:readline";
 import { Store, getInbox } from "../core/index.js";
-import { formatTodoList, formatSuccess, formatError } from "./formatters.js";
-
-async function ensureStore(): Promise<boolean> {
-  if (program.opts().global || Store.findRoot()) return true;
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await new Promise<string>((resolve) => {
-    rl.question(`No .tada/ found. Initialize in ${process.cwd()}? [Y/n] `, resolve);
-  });
-  rl.close();
-  if (answer && answer.toLowerCase() !== "y") return false;
-  await Store.init();
-  console.log(formatSuccess("Initialized .tada/ in current directory\n"));
-  return true;
-}
+import { formatTodoList, formatError } from "./formatters.js";
 
 const program = new Command();
 
@@ -41,11 +27,18 @@ program
   .name("tada")
   .description("A sleek CLI todo manager")
   .version("0.1.0")
-  .option("-g, --global", "Use global ~/.tada/ store");
+  .option("-g, --global", "Use global ~/.tada/ store")
+  .option("-l, --local", "Use local .tada/ store");
 
 program.hook("preAction", (thisCommand) => {
-  if (program.opts().global || thisCommand.opts().global) {
+  const opts = { ...program.opts(), ...thisCommand.opts() };
+  if (opts.local) {
+    Store.defaultMode = "local";
+  } else if (opts.global || !Store.findRoot()) {
     Store.defaultMode = "global";
+  } else {
+    // Local .tada/ found and no explicit flag — use local
+    Store.defaultMode = "local";
   }
 });
 
@@ -81,14 +74,12 @@ program
   .command("ui")
   .description("Launch interactive terminal UI")
   .action(async () => {
-    if (!(await ensureStore())) return;
     const { startTui } = await import("../tui/index.js");
     await startTui();
   });
 
 // Default action: launch TUI if TTY, otherwise show inbox
 program.action(async () => {
-  if (!(await ensureStore())) return;
   if (process.stdout.isTTY) {
     const { startTui } = await import("../tui/index.js");
     await startTui();
@@ -105,10 +96,13 @@ program.action(async () => {
   }
 });
 
-// Add -g flag to all subcommands so `tada ls -g` works
+// Add -g and -l flags to all subcommands so `tada ls -g` / `tada ls -l` works
 for (const cmd of program.commands) {
   if (!cmd.options.some((o: any) => o.long === "--global")) {
     cmd.option("-g, --global", "Use global ~/.tada/ store");
+  }
+  if (!cmd.options.some((o: any) => o.long === "--local")) {
+    cmd.option("-l, --local", "Use local .tada/ store");
   }
 }
 

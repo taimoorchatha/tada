@@ -50,7 +50,7 @@ function emptyStore(): TadaStore {
 }
 
 export class Store {
-  static defaultMode: StoreMode = "local";
+  static defaultMode: StoreMode = "global";
 
   readonly mode: StoreMode;
   readonly rootPath: string;
