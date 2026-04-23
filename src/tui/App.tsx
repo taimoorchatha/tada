@@ -13,7 +13,7 @@ import { ProjectPicker } from "./components/ProjectPicker.js";
 import { getProjectRows } from "./components/ProjectList.js";
 import { getSearchResults } from "./components/SearchView.js";
 import { getLogbookItems } from "./components/LogbookView.js";
-import { addTodo, completeTodo, reopenTodo, deleteTodo, updateTodo, getSubtasks } from "../core/todo.js";
+import { addTodo, completeTodo, reopenTodo, deleteTodo, updateTodo, getSubtasks, reorderTodo } from "../core/todo.js";
 import { createProject, deleteProject } from "../core/project.js";
 import type { Todo } from "../core/types.js";
 import type { SortMode } from "../core/views.js";
@@ -565,6 +565,37 @@ export function App() {
         const next = cycle[todo.priority];
         mutate((store) => updateTodo(store, todo.id, { priority: next }));
         flash(next === "none" ? "Cleared priority" : `Priority: ${next}`);
+      }
+    } else if (input === "J") {
+      // Shift+J: move todo down in order
+      const todo = getSelectedTodo();
+      if (todo && todo.status === "open") {
+        const items = getViewItems(nav.view, data, showCompleted, sortMode, expandedTodoId);
+        const currentIdx = items.findIndex((t) => t.id === todo.id);
+        if (currentIdx >= 0 && currentIdx < items.length - 1) {
+          mutate((store) => {
+            // Find the next sibling's position and place after it
+            const nextTodo = items[currentIdx + 1];
+            const targetPos = (nextTodo.position ?? 0) + 1;
+            reorderTodo(store, todo.id, currentIdx + 1);
+          });
+          selection.moveDown();
+          flash(`Moved "${todo.title}" down`);
+        }
+      }
+    } else if (input === "K") {
+      // Shift+K: move todo up in order
+      const todo = getSelectedTodo();
+      if (todo && todo.status === "open") {
+        const items = getViewItems(nav.view, data, showCompleted, sortMode, expandedTodoId);
+        const currentIdx = items.findIndex((t) => t.id === todo.id);
+        if (currentIdx > 0) {
+          mutate((store) => {
+            reorderTodo(store, todo.id, currentIdx - 1);
+          });
+          selection.moveUp();
+          flash(`Moved "${todo.title}" up`);
+        }
       }
     } else if (input === "s") {
       setSortMode((m) => {

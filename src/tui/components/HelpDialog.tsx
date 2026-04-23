@@ -25,6 +25,7 @@ const sections = [
       ["!", "Cycle priority"],
       ["x", "Delete"],
       ["m", "Move to project"],
+      ["J/K", "Reorder todo up/down"],
       ["p", "New project"],
       ["u", "Undo last action"],
       ["/", "Search"],
