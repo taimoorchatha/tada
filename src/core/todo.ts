@@ -17,6 +17,11 @@ function today(): string {
   return format(new Date(), "yyyy-MM-dd");
 }
 
+function nextPosition(store: TadaStore): number {
+  if (store.todos.length === 0) return 0;
+  return Math.max(...store.todos.map((t) => t.position ?? 0)) + 1;
+}
+
 export function addTodo(store: TadaStore, input: AddTodoInput): Todo {
   if (input.parentId) {
     const parent = store.todos.find((t) => t.id === input.parentId);
@@ -37,6 +42,7 @@ export function addTodo(store: TadaStore, input: AddTodoInput): Todo {
     deadline: input.deadline ?? null,
     recurrence: input.recurrence ?? null,
     parentId: input.parentId ?? null,
+    position: nextPosition(store),
     completedAt: null,
     createdAt: now(),
     updatedAt: now(),
@@ -140,6 +146,84 @@ export function getOpenSubtasks(store: TadaStore, parentId: string): Todo[] {
   return store.todos.filter(
     (t) => t.parentId === parentId && t.status === "open",
   );
+}
+
+export function reorderTodo(
+  store: TadaStore,
+  id: string,
+  targetIndex: number,
+): Todo {
+  const todo = findByPrefixOrThrow(store.todos, id, "todo");
+
+  // Determine context: siblings are todos sharing the same parent and project
+  const siblings = store.todos
+    .filter(
+      (t) =>
+        t.status === "open" &&
+        t.parentId === todo.parentId &&
+        t.projectId === todo.projectId &&
+        t.id !== todo.id,
+    )
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
+  // Clamp target index
+  const clampedIndex = Math.max(0, Math.min(targetIndex, siblings.length));
+
+  // Insert the todo at the target position
+  siblings.splice(clampedIndex, 0, todo);
+
+  // Reassign positions for all siblings
+  for (let i = 0; i < siblings.length; i++) {
+    siblings[i].position = i;
+    siblings[i].updatedAt = now();
+  }
+
+  return todo;
+}
+
+export function reorderTodoRelative(
+  store: TadaStore,
+  id: string,
+  anchorId: string,
+  relation: "before" | "after",
+): Todo {
+  const todo = findByPrefixOrThrow(store.todos, id, "todo");
+  const anchor = findByPrefixOrThrow(store.todos, anchorId, "todo");
+
+  if (todo.id === anchor.id) {
+    throw new Error("Cannot reorder a todo relative to itself");
+  }
+
+  // Determine siblings in same context as the anchor
+  const siblings = store.todos
+    .filter(
+      (t) =>
+        t.status === "open" &&
+        t.parentId === anchor.parentId &&
+        t.projectId === anchor.projectId &&
+        t.id !== todo.id,
+    )
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
+  const anchorIndex = siblings.findIndex((t) => t.id === anchor.id);
+  if (anchorIndex === -1) {
+    throw new Error("Anchor todo not found in context");
+  }
+
+  // Move todo to same context as anchor
+  todo.parentId = anchor.parentId;
+  todo.projectId = anchor.projectId;
+
+  const insertIndex = relation === "before" ? anchorIndex : anchorIndex + 1;
+  siblings.splice(insertIndex, 0, todo);
+
+  // Reassign positions
+  for (let i = 0; i < siblings.length; i++) {
+    siblings[i].position = i;
+    siblings[i].updatedAt = now();
+  }
+
+  return todo;
 }
 
 export function listTodos(store: TadaStore, filter?: TodoFilter): Todo[] {

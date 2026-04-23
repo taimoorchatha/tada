@@ -20,7 +20,7 @@ export function sortTodos(todos: Todo[], mode: SortMode): Todo[] {
       }
       case "created":
       default:
-        return a.createdAt.localeCompare(b.createdAt);
+        return (a.position ?? 0) - (b.position ?? 0);
     }
   });
 }

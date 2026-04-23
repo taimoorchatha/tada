@@ -100,10 +100,14 @@ export class Store {
     try {
       const data = await readFile(this.storePath, "utf-8");
       const store = JSON.parse(data) as TadaStore;
-      // Backfill parentId for existing todos
-      for (const todo of store.todos) {
+      // Backfill parentId and position for existing todos
+      for (let i = 0; i < store.todos.length; i++) {
+        const todo = store.todos[i];
         if (todo.parentId === undefined) {
           todo.parentId = null;
+        }
+        if (todo.position === undefined) {
+          todo.position = i;
         }
       }
       return store;

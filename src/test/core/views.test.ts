@@ -479,11 +479,11 @@ describe("sortTodos", () => {
     expect(sorted[1].title).toBe("banana");
   });
 
-  it("sorts by createdAt ascending", () => {
+  it("sorts by position ascending", () => {
     const todos = [
-      makeTodo({ id: "todo0001", createdAt: "2025-06-03T00:00:00.000Z" }),
-      makeTodo({ id: "todo0002", createdAt: "2025-06-01T00:00:00.000Z" }),
-      makeTodo({ id: "todo0003", createdAt: "2025-06-02T00:00:00.000Z" }),
+      makeTodo({ id: "todo0001", position: 2 }),
+      makeTodo({ id: "todo0002", position: 0 }),
+      makeTodo({ id: "todo0003", position: 1 }),
     ];
 
     const sorted = sortTodos(todos, "created");

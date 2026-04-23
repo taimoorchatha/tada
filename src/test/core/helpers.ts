@@ -18,6 +18,7 @@ export function makeTodo(overrides: Partial<Todo> = {}): Todo {
     deadline: overrides.deadline ?? null,
     recurrence: overrides.recurrence ?? null,
     parentId: overrides.parentId ?? null,
+    position: overrides.position ?? 0,
     completedAt: overrides.completedAt ?? null,
     createdAt: overrides.createdAt ?? "2025-01-01T00:00:00.000Z",
     updatedAt: overrides.updatedAt ?? "2025-01-01T00:00:00.000Z",

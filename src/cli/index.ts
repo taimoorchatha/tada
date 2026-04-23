@@ -18,6 +18,7 @@ import { registerSearchCommand } from "./commands/search.js";
 import { registerProjectCommand } from "./commands/project.js";
 import { registerAreaCommand } from "./commands/area.js";
 import { registerStoresCommand } from "./commands/stores.js";
+import { registerReorderCommand } from "./commands/reorder.js";
 import { Store, getInbox } from "../core/index.js";
 import { formatTodoList, formatError } from "./formatters.js";
 
@@ -59,6 +60,7 @@ registerSearchCommand(program);
 registerProjectCommand(program);
 registerAreaCommand(program);
 registerStoresCommand(program);
+registerReorderCommand(program);
 
 // MCP server subcommand
 program

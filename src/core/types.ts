@@ -22,6 +22,7 @@ export interface Todo {
   deadline: string | null; // YYYY-MM-DD — "due by"
   recurrence: RecurrenceRule | null;
   parentId: string | null;
+  position: number;
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;

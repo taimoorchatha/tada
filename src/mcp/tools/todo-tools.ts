@@ -10,6 +10,8 @@ import {
   deleteTodo,
   listTodos,
   getSubtasks,
+  reorderTodo,
+  reorderTodoRelative,
 } from "../../core/todo.js";
 
 export function registerTodoTools(server: McpServer) {
@@ -239,6 +241,57 @@ export function registerTodoTools(server: McpServer) {
         const store = new Store();
         const data = await store.load();
         const todo = cancelTodo(data, input.id);
+        await store.saveWithBackup(data);
+        return {
+          content: [{ type: "text", text: JSON.stringify(todo, null, 2) }],
+        };
+      } catch (err: any) {
+        return {
+          content: [{ type: "text", text: `Error: ${err.message}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "todo_reorder",
+    "Reorder a todo within its list. Use either 'position' for absolute placement or 'anchorId' + 'relation' for relative placement.",
+    {
+      id: z.string().describe("Todo ID or unambiguous prefix"),
+      position: z
+        .number()
+        .optional()
+        .describe("Target position (0-indexed). Use 0 for top."),
+      anchorId: z
+        .string()
+        .optional()
+        .describe("ID of todo to place before/after"),
+      relation: z
+        .enum(["before", "after"])
+        .optional()
+        .describe("Place before or after the anchor todo"),
+    },
+    async (input) => {
+      try {
+        const store = new Store();
+        const data = await store.load();
+        let todo;
+        if (input.anchorId && input.relation) {
+          todo = reorderTodoRelative(data, input.id, input.anchorId, input.relation);
+        } else if (input.position !== undefined) {
+          todo = reorderTodo(data, input.id, input.position);
+        } else {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Error: Provide either 'position' or both 'anchorId' and 'relation'",
+              },
+            ],
+            isError: true,
+          };
+        }
         await store.saveWithBackup(data);
         return {
           content: [{ type: "text", text: JSON.stringify(todo, null, 2) }],
