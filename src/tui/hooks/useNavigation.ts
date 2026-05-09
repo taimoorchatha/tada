@@ -21,7 +21,7 @@ const viewOrder: View[] = [
 ];
 
 const viewLabels: Record<View, string> = {
-	all: "All Todos",
+	all: "All",
 	inbox: "Inbox",
 	today: "Today",
 	upcoming: "Upcoming",

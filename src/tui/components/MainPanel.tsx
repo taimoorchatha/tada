@@ -110,7 +110,7 @@ export function getViewItems(
 }
 
 const viewTitles: Record<string, string> = {
-	all: "All Todos",
+	all: "All",
 	inbox: "Inbox",
 	today: "Today",
 	upcoming: "Upcoming",

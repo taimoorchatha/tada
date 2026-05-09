@@ -22,7 +22,7 @@ interface SidebarProps {
 }
 
 const views: { key: View; label: string }[] = [
-	{ key: "all", label: "All Todos" },
+	{ key: "all", label: "All" },
 	{ key: "inbox", label: "Inbox" },
 	{ key: "today", label: "Today" },
 	{ key: "upcoming", label: "Upcoming" },

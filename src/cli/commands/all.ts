@@ -14,7 +14,7 @@ export function registerAllCommand(program: Command) {
 				const store = new Store();
 				const data = await store.load();
 				const todos = getAllTodos(data, opts.sort as SortMode);
-				console.log(renderMiniView("ALL TODOS", todos));
+				console.log(renderMiniView("ALL", todos));
 			} catch (err: any) {
 				console.error(formatError(err.message));
 				process.exit(1);

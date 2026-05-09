@@ -8,6 +8,7 @@ import {
 	getProjectTodos,
 	reorderProject,
 	reorderProjectRelative,
+	findByPrefixOrThrow,
 } from "../../core/index.js";
 import type { ProjectStatus } from "../../core/index.js";
 import {
@@ -16,6 +17,7 @@ import {
 	formatError,
 } from "../formatters.js";
 import { renderMiniProjectView } from "../mini-view.js";
+import { confirm } from "../prompts.js";
 
 export function registerProjectCommand(program: Command) {
 	const cmd = program.command("project").description("Manage projects");
@@ -118,13 +120,37 @@ export function registerProjectCommand(program: Command) {
 		.command("delete <id>")
 		.alias("rm")
 		.description("Delete a project (todos move to inbox)")
-		.action(async (id: string) => {
+		.option("-f, --force", "Skip confirmation prompt")
+		.action(async (id: string, opts) => {
 			try {
 				const store = new Store();
 				const data = await store.load();
-				deleteProject(data, id);
+				const project = findByPrefixOrThrow(data.projects, id, "project");
+				const todoCount = getProjectTodos(data, project.id).length;
+
+				if (!opts.force) {
+					const suffix =
+						todoCount > 0
+							? ` (${todoCount} todo${todoCount === 1 ? "" : "s"} will move to inbox)`
+							: "";
+					const ok = await confirm(
+						`Delete project "${project.title}"?${suffix}`,
+					);
+					if (!ok) {
+						console.log("Cancelled");
+						return;
+					}
+				}
+
+				deleteProject(data, project.id);
 				await store.saveWithBackup(data);
-				console.log(formatSuccess("Deleted project (todos moved to inbox)"));
+				console.log(
+					formatSuccess(
+						todoCount > 0
+							? `Deleted "${project.title}" (${todoCount} todo${todoCount === 1 ? "" : "s"} moved to inbox)`
+							: `Deleted "${project.title}"`,
+					),
+				);
 			} catch (err: any) {
 				console.error(formatError(err.message));
 				process.exit(1);
