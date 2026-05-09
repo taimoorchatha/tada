@@ -58,7 +58,7 @@ export function TodoItem({ todo, isSelected, project, subtaskProgress, expandInd
         <Text key={tag} color={colors.tag}> #{tag}</Text>
       ))}
       {project && (
-        <Text color={colors.fgDim}> {icons.bullet} {project.title}</Text>
+        <Text color={colors.project}> {icons.bullet} {project.title}</Text>
       )}
       {todo.deadline && (
         <Text color={isOverdue ? colors.danger : colors.fgDim}> {todo.deadline}</Text>

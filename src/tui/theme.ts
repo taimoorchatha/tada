@@ -23,6 +23,9 @@ export const colors = {
 
   // Tags
   tag: "#22D3EE",
+
+  // Projects (project label next to a todo title)
+  project: "#A78BFA",
 };
 
 export const icons = {
