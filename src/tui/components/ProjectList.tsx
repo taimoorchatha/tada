@@ -7,111 +7,187 @@ import { TodoItem } from "./TodoItem.js";
 import { colors, icons } from "../theme.js";
 
 interface ProjectListProps {
-  data: TadaStore;
-  cursor: number;
-  scrollOffset: number;
-  viewportHeight: number;
-  expandedProjectId: string | null;
-  showCompleted: boolean;
-  sortMode: SortMode;
+	data: TadaStore;
+	cursor: number;
+	scrollOffset: number;
+	viewportHeight: number;
+	expandedProjectId: string | null;
+	showCompleted: boolean;
+	sortMode: SortMode;
 }
 
 interface ProjectRow {
-  type: "project";
-  project: Project;
-  todoCount: number;
+	type: "project";
+	project: Project;
+	todoCount: number;
 }
 
 interface TodoRow {
-  type: "todo";
-  todo: Todo;
-  project: Project;
+	type: "todo";
+	todo: Todo;
+	project: Project;
 }
 
 export type ProjectListRow = ProjectRow | TodoRow;
 
-export function getProjectRows(data: TadaStore, expandedProjectId: string | null, showCompleted = false, sort: SortMode = "created"): ProjectListRow[] {
-  const rows: ProjectListRow[] = [];
-  const activeProjects = data.projects.filter((p) => p.status === "active");
+export function getProjectRows(
+	data: TadaStore,
+	expandedProjectId: string | null,
+	showCompleted = false,
+	sort: SortMode = "created",
+): ProjectListRow[] {
+	const rows: ProjectListRow[] = [];
 
-  for (const project of activeProjects) {
-    const openTodos = getProjectTodos(data, project.id, sort);
-    rows.push({ type: "project", project, todoCount: openTodos.length });
+	const activeProjects = [...data.projects]
+		.filter((p) => p.status === "active")
+		.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-    if (expandedProjectId === project.id) {
-      for (const todo of openTodos) {
-        rows.push({ type: "todo", todo, project });
-      }
-      if (showCompleted) {
-        const doneTodos = data.todos.filter(
-          (t) => t.projectId === project.id && !t.parentId && (t.status === "completed" || t.status === "cancelled"),
-        );
-        for (const todo of doneTodos) {
-          rows.push({ type: "todo", todo, project });
-        }
-      }
-    }
-  }
+	const archivedProjects = showCompleted
+		? [...data.projects]
+				.filter((p) => p.status === "completed" || p.status === "on_hold")
+				.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+		: [];
 
-  return rows;
+	const visibleProjects = [...activeProjects, ...archivedProjects];
+
+	for (const project of visibleProjects) {
+		const openTodos = getProjectTodos(data, project.id, sort);
+		rows.push({ type: "project", project, todoCount: openTodos.length });
+
+		if (expandedProjectId === project.id) {
+			for (const todo of openTodos) {
+				rows.push({ type: "todo", todo, project });
+			}
+			if (showCompleted) {
+				const doneTodos = data.todos.filter(
+					(t) =>
+						t.projectId === project.id &&
+						!t.parentId &&
+						(t.status === "completed" || t.status === "cancelled"),
+				);
+				for (const todo of doneTodos) {
+					rows.push({ type: "todo", todo, project });
+				}
+			}
+		}
+	}
+
+	return rows;
 }
 
-export function ProjectList({ data, cursor, scrollOffset, viewportHeight, expandedProjectId, showCompleted, sortMode }: ProjectListProps) {
-  const rows = getProjectRows(data, expandedProjectId, showCompleted, sortMode);
-  const visible = rows.slice(scrollOffset, scrollOffset + viewportHeight);
+export function ProjectList({
+	data,
+	cursor,
+	scrollOffset,
+	viewportHeight,
+	expandedProjectId,
+	showCompleted,
+	sortMode,
+}: ProjectListProps) {
+	const rows = getProjectRows(data, expandedProjectId, showCompleted, sortMode);
+	const visible = rows.slice(scrollOffset, scrollOffset + viewportHeight);
 
-  return (
-    <Box flexDirection="column" flexGrow={1}>
-      <Box marginBottom={1}>
-        <Text bold color={colors.fg}>Projects</Text>
-        <Text color={colors.fgDim}> ({data.projects.filter((p) => p.status === "active").length})</Text>
-        {expandedProjectId && (() => {
-          const ep = data.projects.find((p) => p.id === expandedProjectId);
-          return ep ? <Text color={colors.accent}> {icons.chevron} {ep.title}</Text> : null;
-        })()}
-      </Box>
-      {rows.length === 0 ? (
-        <Text color={colors.fgDim}>No projects</Text>
-      ) : (
-        visible.map((row, i) => {
-          const actualIdx = scrollOffset + i;
-          const isSelected = actualIdx === cursor;
+	return (
+		<Box flexDirection="column" flexGrow={1}>
+			<Box marginBottom={1}>
+				<Text bold color={colors.fg}>
+					Projects
+				</Text>
+				<Text color={colors.fgDim}>
+					{" "}
+					({data.projects.filter((p) => p.status === "active").length})
+				</Text>
+				{expandedProjectId &&
+					(() => {
+						const ep = data.projects.find((p) => p.id === expandedProjectId);
+						return ep ? (
+							<Text color={colors.accent}>
+								{" "}
+								{icons.chevron} {ep.title}
+							</Text>
+						) : null;
+					})()}
+			</Box>
+			{rows.length === 0 ? (
+				<Text color={colors.fgDim}>No projects</Text>
+			) : (
+				visible.map((row, i) => {
+					const actualIdx = scrollOffset + i;
+					const isSelected = actualIdx === cursor;
 
-          if (row.type === "project") {
-            const isExpanded = expandedProjectId === row.project.id;
-            const otherExpanded = expandedProjectId && expandedProjectId !== row.project.id;
-            return (
-              <Box key={row.project.id}>
-                <Text color={isSelected ? colors.accent : colors.fgDim}>
-                  {isSelected ? icons.cursor + " " : "  "}
-                </Text>
-                <Text color={isExpanded ? colors.accent : colors.fgDim}>
-                  {isExpanded ? icons.expanded : icons.collapsed}{" "}
-                </Text>
-                <Text bold color={isSelected || isExpanded ? colors.accent : otherExpanded ? colors.fgMuted : colors.fg}>
-                  {row.project.title}
-                </Text>
-                <Text color={otherExpanded ? colors.fgMuted : colors.fgDim}> ({row.todoCount})</Text>
-                <Text color={colors.fgMuted}> {row.project.id.slice(0, 4)}</Text>
-              </Box>
-            );
-          }
+					if (row.type === "project") {
+						const isExpanded = expandedProjectId === row.project.id;
+						const otherExpanded =
+							expandedProjectId && expandedProjectId !== row.project.id;
+						const isCompleted = row.project.status === "completed";
+						const isOnHold = row.project.status === "on_hold";
+						const titleColor = isCompleted
+							? colors.fgMuted
+							: isSelected || isExpanded
+								? colors.accent
+								: otherExpanded
+									? colors.fgMuted
+									: colors.fg;
+						return (
+							<Box key={row.project.id}>
+								<Text color={isSelected ? colors.accent : colors.fgDim}>
+									{isSelected ? icons.cursor + " " : "  "}
+								</Text>
+								<Text
+									color={
+										isCompleted
+											? colors.success
+											: isExpanded
+												? colors.accent
+												: colors.fgDim
+									}
+								>
+									{isCompleted
+										? "✓"
+										: isOnHold
+											? "⏸"
+											: isExpanded
+												? icons.expanded
+												: icons.collapsed}{" "}
+								</Text>
+								<Text bold strikethrough={isCompleted} color={titleColor}>
+									{row.project.title}
+								</Text>
+								<Text
+									color={
+										otherExpanded || isCompleted ? colors.fgMuted : colors.fgDim
+									}
+								>
+									{" "}
+									({row.todoCount})
+								</Text>
+								<Text color={colors.fgMuted}>
+									{" "}
+									{row.project.id.slice(0, 4)}
+								</Text>
+							</Box>
+						);
+					}
 
-          const subs = data.todos.filter((t) => t.parentId === row.todo.id);
-          const subtaskProgress = subs.length > 0
-            ? { done: subs.filter((s) => s.status !== "open").length, total: subs.length }
-            : undefined;
-          return (
-            <Box key={row.todo.id} marginLeft={2}>
-              <TodoItem
-                todo={row.todo}
-                isSelected={isSelected}
-                subtaskProgress={subtaskProgress}
-              />
-            </Box>
-          );
-        })
-      )}
-    </Box>
-  );
+					const subs = data.todos.filter((t) => t.parentId === row.todo.id);
+					const subtaskProgress =
+						subs.length > 0
+							? {
+									done: subs.filter((s) => s.status !== "open").length,
+									total: subs.length,
+								}
+							: undefined;
+					return (
+						<Box key={row.todo.id} marginLeft={2}>
+							<TodoItem
+								todo={row.todo}
+								isSelected={isSelected}
+								subtaskProgress={subtaskProgress}
+							/>
+						</Box>
+					);
+				})
+			)}
+		</Box>
+	);
 }

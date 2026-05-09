@@ -13,8 +13,22 @@ import { ProjectPicker } from "./components/ProjectPicker.js";
 import { getProjectRows } from "./components/ProjectList.js";
 import { getSearchResults } from "./components/SearchView.js";
 import { getLogbookItems } from "./components/LogbookView.js";
-import { addTodo, completeTodo, reopenTodo, deleteTodo, updateTodo, getSubtasks, reorderTodo } from "../core/todo.js";
-import { createProject, deleteProject } from "../core/project.js";
+import {
+	addTodo,
+	completeTodo,
+	reopenTodo,
+	deleteTodo,
+	updateTodo,
+	getSubtasks,
+	reorderTodo,
+} from "../core/todo.js";
+import {
+	createProject,
+	deleteProject,
+	reorderProject,
+	completeProject,
+	convertTodoToProject,
+} from "../core/project.js";
 import type { Todo } from "../core/types.js";
 import type { SortMode } from "../core/views.js";
 import { format, addDays, addWeeks } from "date-fns";
@@ -25,743 +39,1046 @@ import { ProjectAdd } from "./components/ProjectAdd.js";
 import { EditTodo } from "./components/EditTodo.js";
 import { SchedulePicker } from "./components/SchedulePicker.js";
 
-type InputMode = null | "quickadd" | "confirm" | "search" | "detail" | "move" | "help" | "createproject" | "edit" | "schedule";
+type InputMode =
+	| null
+	| "quickadd"
+	| "confirm"
+	| "search"
+	| "detail"
+	| "move"
+	| "help"
+	| "createproject"
+	| "edit"
+	| "schedule";
+
+import type { Project, TadaStore } from "../core/types.js";
+
+function filterProjectsForMove(data: TadaStore, query: string): Project[] {
+	const active = data.projects
+		.filter((p) => p.status === "active")
+		.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+	const q = query.trim().toLowerCase();
+	if (!q) return active;
+	return active.filter(
+		(p) =>
+			p.title.toLowerCase().includes(q) || p.id.toLowerCase().startsWith(q),
+	);
+}
 
 export function App() {
-  const { exit } = useApp();
-  const { stdout } = useStdout();
-  const termHeight = stdout?.rows ?? 24;
-  const viewportHeight = Math.max(termHeight - 8, 5);
+	const { exit } = useApp();
+	const { stdout } = useStdout();
+	const termHeight = stdout?.rows ?? 24;
+	const viewportHeight = Math.max(termHeight - 8, 5);
 
-  const { data, loading, error, mutate, mode, storePath, toggleMode, undo } = useStore();
-  const nav = useNavigation();
-  const [inputMode, setInputMode] = useState<InputMode>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [detailTodo, setDetailTodo] = useState<Todo | null>(null);
-  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
-  const [expandedTodoId, setExpandedTodoId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [sidebarCursor, setSidebarCursor] = useState(0);
-  const [showCompleted, setShowCompleted] = useState(false);
-  const [sortMode, setSortMode] = useState<SortMode>("created");
+	const { data, loading, error, mutate, mode, storePath, toggleMode, undo } =
+		useStore();
+	const nav = useNavigation();
+	const [inputMode, setInputMode] = useState<InputMode>(null);
+	const [message, setMessage] = useState<string | null>(null);
+	const [detailTodo, setDetailTodo] = useState<Todo | null>(null);
+	const [expandedProjectId, setExpandedProjectId] = useState<string | null>(
+		null,
+	);
+	const [expandedTodoId, setExpandedTodoId] = useState<string | null>(null);
+	const [searchQuery, setSearchQuery] = useState("");
+	const [sidebarCursor, setSidebarCursor] = useState(0);
+	const [showCompleted, setShowCompleted] = useState(false);
+	const [sortMode, setSortMode] = useState<SortMode>("created");
 
-  // Move-to-project state
-  const [moveCursor, setMoveCursor] = useState(0);
-  const [moveTodo, setMoveTodo] = useState<Todo | null>(null);
+	// Move-to-project state
+	const [moveCursor, setMoveCursor] = useState(0);
+	const [moveTodo, setMoveTodo] = useState<Todo | null>(null);
+	const [moveQuery, setMoveQuery] = useState("");
 
-  // Edit state
-  const [editTodo, setEditTodo] = useState<Todo | null>(null);
+	// Edit state
+	const [editTodo, setEditTodo] = useState<Todo | null>(null);
 
-  // Schedule state
-  const [scheduleTodo, setScheduleTodo] = useState<Todo | null>(null);
-  const [scheduleDate, setScheduleDate] = useState<string | null>(null);
+	// Schedule state
+	const [scheduleTodo, setScheduleTodo] = useState<Todo | null>(null);
+	const [scheduleDate, setScheduleDate] = useState<string | null>(null);
 
-  // Subtask parent for Shift+A
-  const subtaskParentRef = useRef<string | null>(null);
+	// Subtask parent for Shift+A
+	const subtaskParentRef = useRef<string | null>(null);
 
-  // Confirm action stored in ref to avoid stale closure issues
-  const confirmActionRef = useRef<(() => void) | null>(null);
-  const [confirmMessage, setConfirmMessage] = useState("Delete this item?");
+	// Confirm action stored in ref to avoid stale closure issues
+	const confirmActionRef = useRef<(() => void) | null>(null);
+	const [confirmMessage, setConfirmMessage] = useState("Delete this item?");
 
-  // Get current item count for selection
-  const getItemCount = useCallback(() => {
-    if (nav.view === "inbox" || nav.view === "today" || nav.view === "upcoming") {
-      return getViewItems(nav.view, data, showCompleted, sortMode, expandedTodoId).length;
-    }
-    if (nav.view === "projects") {
-      return getProjectRows(data, expandedProjectId, showCompleted, sortMode).length;
-    }
-    if (nav.view === "logbook") {
-      return getLogbookItems(data).length;
-    }
-    if (nav.view === "search") {
-      return getSearchResults(data, searchQuery).length;
-    }
-    return 0;
-  }, [nav.view, data, expandedProjectId, expandedTodoId, searchQuery, showCompleted, sortMode]);
+	// Get current item count for selection
+	const getItemCount = useCallback(() => {
+		if (
+			nav.view === "all" ||
+			nav.view === "inbox" ||
+			nav.view === "today" ||
+			nav.view === "upcoming"
+		) {
+			return getViewItems(
+				nav.view,
+				data,
+				showCompleted,
+				sortMode,
+				expandedTodoId,
+			).length;
+		}
+		if (nav.view === "projects") {
+			return getProjectRows(data, expandedProjectId, showCompleted, sortMode)
+				.length;
+		}
+		if (nav.view === "logbook") {
+			return getLogbookItems(data).length;
+		}
+		if (nav.view === "search") {
+			return getSearchResults(data, searchQuery).length;
+		}
+		return 0;
+	}, [
+		nav.view,
+		data,
+		expandedProjectId,
+		expandedTodoId,
+		searchQuery,
+		showCompleted,
+		sortMode,
+	]);
 
-  const selection = useSelection(getItemCount(), viewportHeight);
+	const selection = useSelection(getItemCount(), viewportHeight);
 
-  // Reset selection and expansion when view changes
-  useEffect(() => {
-    selection.reset();
-    setExpandedTodoId(null);
-  }, [nav.view]);
+	// Reset selection and expansion when view changes
+	useEffect(() => {
+		selection.reset();
+		setExpandedTodoId(null);
+	}, [nav.view]);
 
-  // Flash message helper
-  const flash = useCallback((msg: string) => {
-    setMessage(msg);
-    setTimeout(() => setMessage(null), 2000);
-  }, []);
+	// Flash message helper
+	const flash = useCallback((msg: string) => {
+		setMessage(msg);
+		setTimeout(() => setMessage(null), 2000);
+	}, []);
 
-  // Get the currently selected todo
-  const getSelectedTodo = useCallback((): Todo | null => {
-    if (nav.view === "inbox" || nav.view === "today" || nav.view === "upcoming") {
-      const items = getViewItems(nav.view, data, showCompleted, sortMode, expandedTodoId);
-      return items[selection.cursor] ?? null;
-    }
-    if (nav.view === "projects") {
-      const rows = getProjectRows(data, expandedProjectId, showCompleted, sortMode);
-      const row = rows[selection.cursor];
-      if (row?.type === "todo") return row.todo;
-      return null;
-    }
-    if (nav.view === "logbook") {
-      const items = getLogbookItems(data);
-      return items[selection.cursor] ?? null;
-    }
-    if (nav.view === "search") {
-      const results = getSearchResults(data, searchQuery);
-      const r = results[selection.cursor];
-      if (r?.type === "todo") return r.item;
-      return null;
-    }
-    return null;
-  }, [nav.view, data, selection.cursor, expandedProjectId, expandedTodoId, searchQuery, showCompleted, sortMode]);
+	// Get the currently selected todo
+	const getSelectedTodo = useCallback((): Todo | null => {
+		if (
+			nav.view === "all" ||
+			nav.view === "inbox" ||
+			nav.view === "today" ||
+			nav.view === "upcoming"
+		) {
+			const items = getViewItems(
+				nav.view,
+				data,
+				showCompleted,
+				sortMode,
+				expandedTodoId,
+			);
+			return items[selection.cursor] ?? null;
+		}
+		if (nav.view === "projects") {
+			const rows = getProjectRows(
+				data,
+				expandedProjectId,
+				showCompleted,
+				sortMode,
+			);
+			const row = rows[selection.cursor];
+			if (row?.type === "todo") return row.todo;
+			return null;
+		}
+		if (nav.view === "logbook") {
+			const items = getLogbookItems(data);
+			return items[selection.cursor] ?? null;
+		}
+		if (nav.view === "search") {
+			const results = getSearchResults(data, searchQuery);
+			const r = results[selection.cursor];
+			if (r?.type === "todo") return r.item;
+			return null;
+		}
+		return null;
+	}, [
+		nav.view,
+		data,
+		selection.cursor,
+		expandedProjectId,
+		expandedTodoId,
+		searchQuery,
+		showCompleted,
+		sortMode,
+	]);
 
-  // Get the active project context (for adding inside a project)
-  const getActiveProject = useCallback(() => {
-    if (nav.view === "projects" && expandedProjectId) {
-      return data.projects.find((p) => p.id === expandedProjectId) ?? null;
-    }
-    return null;
-  }, [nav.view, expandedProjectId, data]);
+	// Get the active project context (for adding inside a project)
+	const getActiveProject = useCallback(() => {
+		if (nav.view === "projects" && expandedProjectId) {
+			return data.projects.find((p) => p.id === expandedProjectId) ?? null;
+		}
+		return null;
+	}, [nav.view, expandedProjectId, data]);
 
-  // Handle quick add submit
-  const handleQuickAdd = useCallback(async (parsed: ParsedInput) => {
-    if (!parsed.title) {
-      setInputMode(null);
-      subtaskParentRef.current = null;
-      return;
-    }
-    const activeProject = getActiveProject();
-    const parentId = subtaskParentRef.current;
-    await mutate((store) => {
-      let projectId: string | null = null;
-      // Explicit p: in input takes priority
-      if (parsed.projectName) {
-        const p = store.projects.find(
-          (proj) => proj.title.toLowerCase() === parsed.projectName!.toLowerCase(),
-        );
-        if (p) projectId = p.id;
-      } else if (activeProject) {
-        // Auto-associate with expanded project
-        projectId = activeProject.id;
-      }
-      // Default to today's date when adding from Today view
-      let scheduledDate = parsed.scheduledDate;
-      if (!scheduledDate && nav.view === "today") {
-        scheduledDate = format(new Date(), "yyyy-MM-dd");
-      }
-      addTodo(store, {
-        title: parsed.title,
-        tags: parsed.tags,
-        priority: parsed.priority,
-        scheduledDate,
-        deadline: parsed.deadline,
-        projectId,
-        parentId,
-      });
-    });
-    setInputMode(null);
-    const parent = parentId ? data.todos.find((t) => t.id === parentId) : null;
-    subtaskParentRef.current = null;
-    flash(parent ? `Added subtask to "${parent.title}"` : `Added "${parsed.title}"${getActiveProject() ? ` to ${getActiveProject()!.title}` : ""}`);
-  }, [mutate, flash, getActiveProject, data]);
+	// Handle quick add submit
+	const handleQuickAdd = useCallback(
+		async (parsed: ParsedInput) => {
+			if (!parsed.title) {
+				setInputMode(null);
+				subtaskParentRef.current = null;
+				return;
+			}
+			const activeProject = getActiveProject();
+			const parentId = subtaskParentRef.current;
+			await mutate((store) => {
+				let projectId: string | null = null;
+				// Explicit p: in input takes priority
+				if (parsed.projectName) {
+					const p = store.projects.find(
+						(proj) =>
+							proj.title.toLowerCase() === parsed.projectName!.toLowerCase(),
+					);
+					if (p) projectId = p.id;
+				} else if (activeProject) {
+					// Auto-associate with expanded project
+					projectId = activeProject.id;
+				}
+				// Default to today's date when adding from Today view
+				let scheduledDate = parsed.scheduledDate;
+				if (!scheduledDate && nav.view === "today") {
+					scheduledDate = format(new Date(), "yyyy-MM-dd");
+				}
+				addTodo(store, {
+					title: parsed.title,
+					tags: parsed.tags,
+					priority: parsed.priority,
+					scheduledDate,
+					deadline: parsed.deadline,
+					projectId,
+					parentId,
+				});
+			});
+			setInputMode(null);
+			const parent = parentId
+				? data.todos.find((t) => t.id === parentId)
+				: null;
+			subtaskParentRef.current = null;
+			flash(
+				parent
+					? `Added subtask to "${parent.title}"`
+					: `Added "${parsed.title}"${getActiveProject() ? ` to ${getActiveProject()!.title}` : ""}`,
+			);
+		},
+		[mutate, flash, getActiveProject, data],
+	);
 
-  // Handle complete (toggle: complete if open, reopen if completed/cancelled)
-  const handleComplete = useCallback(async () => {
-    const todo = getSelectedTodo();
-    if (!todo) return;
-    try {
-      if (todo.status === "open") {
-        await mutate((store) => completeTodo(store, todo.id));
-        flash(`Completed "${todo.title}"`);
-      } else {
-        await mutate((store) => reopenTodo(store, todo.id));
-        flash(`Reopened "${todo.title}"`);
-      }
-    } catch (err: any) {
-      flash(err.message);
-    }
-  }, [getSelectedTodo, mutate, flash]);
+	// Handle complete (toggle: complete if open, reopen if completed/cancelled)
+	const handleComplete = useCallback(async () => {
+		// Project completion when on a project row
+		if (nav.view === "projects") {
+			const rows = getProjectRows(
+				data,
+				expandedProjectId,
+				showCompleted,
+				sortMode,
+			);
+			const row = rows[selection.cursor];
+			if (row?.type === "project") {
+				const project = row.project;
+				if (project.status === "active") {
+					try {
+						await mutate((store) => completeProject(store, project.id));
+						flash(`Completed project "${project.title}"`);
+					} catch (err: any) {
+						flash(err.message);
+					}
+				} else {
+					flash(`Project "${project.title}" is already ${project.status}`);
+				}
+				return;
+			}
+		}
+		const todo = getSelectedTodo();
+		if (!todo) return;
+		try {
+			if (todo.status === "open") {
+				await mutate((store) => completeTodo(store, todo.id));
+				flash(`Completed "${todo.title}"`);
+			} else {
+				await mutate((store) => reopenTodo(store, todo.id));
+				flash(`Reopened "${todo.title}"`);
+			}
+		} catch (err: any) {
+			flash(err.message);
+		}
+	}, [
+		getSelectedTodo,
+		mutate,
+		flash,
+		nav.view,
+		data,
+		expandedProjectId,
+		showCompleted,
+		sortMode,
+		selection.cursor,
+	]);
 
-  // Handle delete with confirmation
-  const handleDelete = useCallback(() => {
-    // Check if we're on a project row
-    if (nav.view === "projects") {
-      const rows = getProjectRows(data, expandedProjectId, showCompleted, sortMode);
-      const row = rows[selection.cursor];
-      if (row?.type === "project") {
-        const project = row.project;
-        confirmActionRef.current = async () => {
-          await mutate((store) => deleteProject(store, project.id));
-          if (expandedProjectId === project.id) setExpandedProjectId(null);
-          flash(`Deleted project "${project.title}"`);
-          setInputMode(null);
-          confirmActionRef.current = null;
-        };
-        setConfirmMessage(`Delete project "${project.title}"?`);
-        setInputMode("confirm");
-        return;
-      }
-    }
-    const todo = getSelectedTodo();
-    if (!todo) return;
-    confirmActionRef.current = async () => {
-      await mutate((store) => deleteTodo(store, todo.id));
-      flash(`Deleted "${todo.title}"`);
-      setInputMode(null);
-      confirmActionRef.current = null;
-    };
-    setConfirmMessage(`Delete todo "${todo.title}"?`);
-    setInputMode("confirm");
-  }, [getSelectedTodo, mutate, flash, nav.view, data, expandedProjectId, showCompleted, sortMode, selection.cursor]);
+	// Handle delete with confirmation
+	const handleDelete = useCallback(() => {
+		// Check if we're on a project row
+		if (nav.view === "projects") {
+			const rows = getProjectRows(
+				data,
+				expandedProjectId,
+				showCompleted,
+				sortMode,
+			);
+			const row = rows[selection.cursor];
+			if (row?.type === "project") {
+				const project = row.project;
+				confirmActionRef.current = async () => {
+					await mutate((store) => deleteProject(store, project.id));
+					if (expandedProjectId === project.id) setExpandedProjectId(null);
+					flash(`Deleted project "${project.title}"`);
+					setInputMode(null);
+					confirmActionRef.current = null;
+				};
+				setConfirmMessage(`Delete project "${project.title}"?`);
+				setInputMode("confirm");
+				return;
+			}
+		}
+		const todo = getSelectedTodo();
+		if (!todo) return;
+		confirmActionRef.current = async () => {
+			await mutate((store) => deleteTodo(store, todo.id));
+			flash(`Deleted "${todo.title}"`);
+			setInputMode(null);
+			confirmActionRef.current = null;
+		};
+		setConfirmMessage(`Delete todo "${todo.title}"?`);
+		setInputMode("confirm");
+	}, [
+		getSelectedTodo,
+		mutate,
+		flash,
+		nav.view,
+		data,
+		expandedProjectId,
+		showCompleted,
+		sortMode,
+		selection.cursor,
+	]);
 
-  // Handle move to project
-  const handleStartMove = useCallback(() => {
-    const todo = getSelectedTodo();
-    if (!todo || todo.status !== "open") return;
-    setMoveTodo(todo);
-    setMoveCursor(0);
-    setInputMode("move");
-  }, [getSelectedTodo]);
+	// Handle move to project
+	const handleStartMove = useCallback(() => {
+		const todo = getSelectedTodo();
+		if (!todo || todo.status !== "open") return;
+		setMoveTodo(todo);
+		setMoveCursor(0);
+		setMoveQuery("");
+		setInputMode("move");
+	}, [getSelectedTodo]);
 
-  const handleConfirmMove = useCallback(async () => {
-    if (!moveTodo) return;
-    const activeProjects = data.projects.filter((p) => p.status === "active");
-    // cursor 0 = inbox (null), cursor 1+ = project
-    const targetProject = moveCursor === 0 ? null : activeProjects[moveCursor - 1] ?? null;
-    const projectId = targetProject?.id ?? null;
+	const handleConfirmMove = useCallback(async () => {
+		if (!moveTodo) return;
+		const filtered = filterProjectsForMove(data, moveQuery);
+		// cursor 0 = inbox (null), cursor 1+ = project
+		const targetProject =
+			moveCursor === 0 ? null : (filtered[moveCursor - 1] ?? null);
+		const projectId = targetProject?.id ?? null;
 
-    await mutate((store) => {
-      updateTodo(store, moveTodo.id, { projectId });
-    });
+		await mutate((store) => {
+			updateTodo(store, moveTodo.id, { projectId });
+		});
 
-    const dest = targetProject ? targetProject.title : "Inbox";
-    flash(`Moved "${moveTodo.title}" to ${dest}`);
-    setInputMode(null);
-    setMoveTodo(null);
-  }, [moveTodo, moveCursor, data, mutate, flash]);
+		const dest = targetProject ? targetProject.title : "Inbox";
+		flash(`Moved "${moveTodo.title}" to ${dest}`);
+		setInputMode(null);
+		setMoveTodo(null);
+		setMoveQuery("");
+	}, [moveTodo, moveCursor, moveQuery, data, mutate, flash]);
 
-  // Handle create project
-  const handleCreateProject = useCallback(async (title: string) => {
-    await mutate((store) => {
-      createProject(store, { title });
-    });
-    setInputMode(null);
-    flash(`Created project "${title}"`);
-  }, [mutate, flash]);
+	// Handle create project
+	const handleCreateProject = useCallback(
+		async (title: string) => {
+			await mutate((store) => {
+				createProject(store, { title });
+			});
+			setInputMode(null);
+			flash(`Created project "${title}"`);
+		},
+		[mutate, flash],
+	);
 
-  // Handle edit submit
-  const handleEditSubmit = useCallback(async (parsed: ParsedInput) => {
-    if (!editTodo || !parsed.title) {
-      setInputMode(null);
-      setEditTodo(null);
-      return;
-    }
-    const updates: Record<string, any> = { title: parsed.title };
-    if (parsed.tags.length > 0) updates.tags = parsed.tags;
-    if (parsed.priority !== "none") updates.priority = parsed.priority;
-    if (parsed.scheduledDate !== null) updates.scheduledDate = parsed.scheduledDate;
-    if (parsed.deadline !== null) updates.deadline = parsed.deadline;
-    if (parsed.projectName) {
-      const p = data.projects.find(
-        (proj) => proj.title.toLowerCase() === parsed.projectName!.toLowerCase(),
-      );
-      if (p) updates.projectId = p.id;
-    }
-    await mutate((store) => updateTodo(store, editTodo.id, updates));
-    flash(`Updated "${parsed.title}"`);
-    setInputMode(null);
-    setEditTodo(null);
-  }, [editTodo, data, mutate, flash]);
+	// Handle edit submit
+	const handleEditSubmit = useCallback(
+		async (parsed: ParsedInput) => {
+			if (!editTodo || !parsed.title) {
+				setInputMode(null);
+				setEditTodo(null);
+				return;
+			}
+			const updates: Record<string, any> = { title: parsed.title };
+			if (parsed.tags.length > 0) updates.tags = parsed.tags;
+			if (parsed.priority !== "none") updates.priority = parsed.priority;
+			if (parsed.scheduledDate !== null)
+				updates.scheduledDate = parsed.scheduledDate;
+			if (parsed.deadline !== null) updates.deadline = parsed.deadline;
+			if (parsed.projectName) {
+				const p = data.projects.find(
+					(proj) =>
+						proj.title.toLowerCase() === parsed.projectName!.toLowerCase(),
+				);
+				if (p) updates.projectId = p.id;
+			}
+			await mutate((store) => updateTodo(store, editTodo.id, updates));
+			flash(`Updated "${parsed.title}"`);
+			setInputMode(null);
+			setEditTodo(null);
+		},
+		[editTodo, data, mutate, flash],
+	);
 
-  // Keyboard handler
-  useInput((input, key) => {
-    // Handle confirm dialog
-    if (inputMode === "confirm") {
-      if (input === "y" && confirmActionRef.current) {
-        confirmActionRef.current();
-      } else if (input === "n" || key.escape) {
-        setInputMode(null);
-        confirmActionRef.current = null;
-      }
-      return;
-    }
+	// Keyboard handler
+	useInput((input, key) => {
+		// Handle confirm dialog
+		if (inputMode === "confirm") {
+			if (input === "y" && confirmActionRef.current) {
+				confirmActionRef.current();
+			} else if (input === "n" || key.escape) {
+				setInputMode(null);
+				confirmActionRef.current = null;
+			}
+			return;
+		}
 
-    // Handle move-to-project picker
-    if (inputMode === "move") {
-      const activeProjects = data.projects.filter((p) => p.status === "active");
-      const maxIdx = activeProjects.length; // 0=inbox, 1..n=projects
-      if (input === "j" || key.downArrow) {
-        setMoveCursor((c) => Math.min(c + 1, maxIdx));
-      } else if (input === "k" || key.upArrow) {
-        setMoveCursor((c) => Math.max(c - 1, 0));
-      } else if (key.return) {
-        handleConfirmMove();
-      } else if (key.escape) {
-        setInputMode(null);
-        setMoveTodo(null);
-      }
-      return;
-    }
+		// Handle move-to-project picker
+		if (inputMode === "move") {
+			const filtered = filterProjectsForMove(data, moveQuery);
+			const maxIdx = filtered.length; // 0=inbox, 1..n=projects
+			if (key.upArrow) {
+				setMoveCursor((c) => Math.max(c - 1, 0));
+			} else if (key.downArrow) {
+				setMoveCursor((c) => Math.min(c + 1, maxIdx));
+			} else if (key.return) {
+				handleConfirmMove();
+			} else if (key.escape) {
+				setInputMode(null);
+				setMoveTodo(null);
+				setMoveQuery("");
+			} else if (key.backspace || key.delete) {
+				setMoveQuery((q) => q.slice(0, -1));
+				setMoveCursor(0);
+			} else if (input && input.length === 1 && input >= " ") {
+				// Typed character: append to fuzzy-search query
+				setMoveQuery((q) => q + input);
+				setMoveCursor(0);
+			}
+			return;
+		}
 
-    // Handle schedule picker
-    if (inputMode === "schedule") {
-      if (key.escape) {
-        setInputMode(null);
-        setScheduleTodo(null);
-        setScheduleDate(null);
-      } else if (input === "t") {
-        const d = format(new Date(), "yyyy-MM-dd");
-        setScheduleDate(d);
-        if (scheduleTodo) {
-          mutate((store) => updateTodo(store, scheduleTodo.id, { scheduledDate: d }));
-          flash(`Scheduled for today`);
-          setInputMode(null);
-          setScheduleTodo(null);
-          setScheduleDate(null);
-        }
-      } else if (input === "T") {
-        const d = format(addDays(new Date(), 1), "yyyy-MM-dd");
-        setScheduleDate(d);
-        if (scheduleTodo) {
-          mutate((store) => updateTodo(store, scheduleTodo.id, { scheduledDate: d }));
-          flash(`Scheduled for tomorrow`);
-          setInputMode(null);
-          setScheduleTodo(null);
-          setScheduleDate(null);
-        }
-      } else if (input === "n") {
-        const d = format(addWeeks(new Date(), 1), "yyyy-MM-dd");
-        setScheduleDate(d);
-        if (scheduleTodo) {
-          mutate((store) => updateTodo(store, scheduleTodo.id, { scheduledDate: d }));
-          flash(`Scheduled for next week`);
-          setInputMode(null);
-          setScheduleTodo(null);
-          setScheduleDate(null);
-        }
-      } else if ((input === "+" || input === "=") && scheduleTodo) {
-        const base = scheduleDate ?? scheduleTodo.scheduledDate ?? format(new Date(), "yyyy-MM-dd");
-        const d = format(addDays(new Date(base + "T00:00:00"), 1), "yyyy-MM-dd");
-        setScheduleDate(d);
-        mutate((store) => updateTodo(store, scheduleTodo.id, { scheduledDate: d }));
-        flash(`Scheduled for ${d}`);
-      } else if (input === "-" && scheduleTodo) {
-        const base = scheduleDate ?? scheduleTodo.scheduledDate ?? format(new Date(), "yyyy-MM-dd");
-        const d = format(addDays(new Date(base + "T00:00:00"), -1), "yyyy-MM-dd");
-        setScheduleDate(d);
-        mutate((store) => updateTodo(store, scheduleTodo.id, { scheduledDate: d }));
-        flash(`Scheduled for ${d}`);
-      } else if (input === "]" && scheduleTodo) {
-        const base = scheduleDate ?? scheduleTodo.scheduledDate ?? format(new Date(), "yyyy-MM-dd");
-        const d = format(addWeeks(new Date(base + "T00:00:00"), 1), "yyyy-MM-dd");
-        setScheduleDate(d);
-        mutate((store) => updateTodo(store, scheduleTodo.id, { scheduledDate: d }));
-        flash(`Scheduled for ${d}`);
-      } else if (input === "[" && scheduleTodo) {
-        const base = scheduleDate ?? scheduleTodo.scheduledDate ?? format(new Date(), "yyyy-MM-dd");
-        const d = format(addWeeks(new Date(base + "T00:00:00"), -1), "yyyy-MM-dd");
-        setScheduleDate(d);
-        mutate((store) => updateTodo(store, scheduleTodo.id, { scheduledDate: d }));
-        flash(`Scheduled for ${d}`);
-      } else if (key.backspace || key.delete) {
-        if (scheduleTodo) {
-          mutate((store) => updateTodo(store, scheduleTodo.id, { scheduledDate: null, deadline: null }));
-          flash(`Cleared all dates`);
-          setInputMode(null);
-          setScheduleTodo(null);
-          setScheduleDate(null);
-        }
-      }
-      return;
-    }
+		// Handle schedule picker
+		if (inputMode === "schedule") {
+			if (key.escape) {
+				setInputMode(null);
+				setScheduleTodo(null);
+				setScheduleDate(null);
+			} else if (input === "t") {
+				const d = format(new Date(), "yyyy-MM-dd");
+				setScheduleDate(d);
+				if (scheduleTodo) {
+					mutate((store) =>
+						updateTodo(store, scheduleTodo.id, { scheduledDate: d }),
+					);
+					flash(`Scheduled for today`);
+					setInputMode(null);
+					setScheduleTodo(null);
+					setScheduleDate(null);
+				}
+			} else if (input === "T") {
+				const d = format(addDays(new Date(), 1), "yyyy-MM-dd");
+				setScheduleDate(d);
+				if (scheduleTodo) {
+					mutate((store) =>
+						updateTodo(store, scheduleTodo.id, { scheduledDate: d }),
+					);
+					flash(`Scheduled for tomorrow`);
+					setInputMode(null);
+					setScheduleTodo(null);
+					setScheduleDate(null);
+				}
+			} else if (input === "n") {
+				const d = format(addWeeks(new Date(), 1), "yyyy-MM-dd");
+				setScheduleDate(d);
+				if (scheduleTodo) {
+					mutate((store) =>
+						updateTodo(store, scheduleTodo.id, { scheduledDate: d }),
+					);
+					flash(`Scheduled for next week`);
+					setInputMode(null);
+					setScheduleTodo(null);
+					setScheduleDate(null);
+				}
+			} else if ((input === "+" || input === "=") && scheduleTodo) {
+				const base =
+					scheduleDate ??
+					scheduleTodo.scheduledDate ??
+					format(new Date(), "yyyy-MM-dd");
+				const d = format(
+					addDays(new Date(base + "T00:00:00"), 1),
+					"yyyy-MM-dd",
+				);
+				setScheduleDate(d);
+				mutate((store) =>
+					updateTodo(store, scheduleTodo.id, { scheduledDate: d }),
+				);
+				flash(`Scheduled for ${d}`);
+			} else if (input === "-" && scheduleTodo) {
+				const base =
+					scheduleDate ??
+					scheduleTodo.scheduledDate ??
+					format(new Date(), "yyyy-MM-dd");
+				const d = format(
+					addDays(new Date(base + "T00:00:00"), -1),
+					"yyyy-MM-dd",
+				);
+				setScheduleDate(d);
+				mutate((store) =>
+					updateTodo(store, scheduleTodo.id, { scheduledDate: d }),
+				);
+				flash(`Scheduled for ${d}`);
+			} else if (input === "]" && scheduleTodo) {
+				const base =
+					scheduleDate ??
+					scheduleTodo.scheduledDate ??
+					format(new Date(), "yyyy-MM-dd");
+				const d = format(
+					addWeeks(new Date(base + "T00:00:00"), 1),
+					"yyyy-MM-dd",
+				);
+				setScheduleDate(d);
+				mutate((store) =>
+					updateTodo(store, scheduleTodo.id, { scheduledDate: d }),
+				);
+				flash(`Scheduled for ${d}`);
+			} else if (input === "[" && scheduleTodo) {
+				const base =
+					scheduleDate ??
+					scheduleTodo.scheduledDate ??
+					format(new Date(), "yyyy-MM-dd");
+				const d = format(
+					addWeeks(new Date(base + "T00:00:00"), -1),
+					"yyyy-MM-dd",
+				);
+				setScheduleDate(d);
+				mutate((store) =>
+					updateTodo(store, scheduleTodo.id, { scheduledDate: d }),
+				);
+				flash(`Scheduled for ${d}`);
+			} else if (key.backspace || key.delete) {
+				if (scheduleTodo) {
+					mutate((store) =>
+						updateTodo(store, scheduleTodo.id, {
+							scheduledDate: null,
+							deadline: null,
+						}),
+					);
+					flash(`Cleared all dates`);
+					setInputMode(null);
+					setScheduleTodo(null);
+					setScheduleDate(null);
+				}
+			}
+			return;
+		}
 
-    // Don't handle keys during text input modes
-    if (inputMode === "quickadd") {
-      if (key.escape) {
-        setInputMode(null);
-        subtaskParentRef.current = null;
-      }
-      return;
-    }
+		// Don't handle keys during text input modes
+		if (inputMode === "quickadd") {
+			if (key.escape) {
+				setInputMode(null);
+				subtaskParentRef.current = null;
+			}
+			return;
+		}
 
-    if (inputMode === "edit") {
-      if (key.escape) {
-        setInputMode(null);
-        setEditTodo(null);
-      }
-      return;
-    }
+		if (inputMode === "edit") {
+			if (key.escape) {
+				setInputMode(null);
+				setEditTodo(null);
+			}
+			return;
+		}
 
-    if (inputMode === "search") {
-      if (key.escape) {
-        setInputMode(null);
-      }
-      return;
-    }
+		if (inputMode === "search") {
+			if (key.escape) {
+				setInputMode(null);
+			}
+			return;
+		}
 
-    if (inputMode === "createproject") {
-      if (key.escape) {
-        setInputMode(null);
-      }
-      return;
-    }
+		if (inputMode === "createproject") {
+			if (key.escape) {
+				setInputMode(null);
+			}
+			return;
+		}
 
-    // Help overlay
-    if (inputMode === "help") {
-      if (key.escape || input === "?") {
-        setInputMode(null);
-      }
-      return;
-    }
+		// Help overlay
+		if (inputMode === "help") {
+			if (key.escape || input === "?") {
+				setInputMode(null);
+			}
+			return;
+		}
 
-    // Detail modal
-    if (inputMode === "detail") {
-      if (key.escape) {
-        setInputMode(null);
-        setDetailTodo(null);
-      } else if (input === "d" && detailTodo) {
-        const action = detailTodo.status === "open"
-          ? (store: any) => completeTodo(store, detailTodo.id)
-          : (store: any) => reopenTodo(store, detailTodo.id);
-        const verb = detailTodo.status === "open" ? "Completed" : "Reopened";
-        mutate(action).then(() => {
-          flash(`${verb} "${detailTodo.title}"`);
-          setInputMode(null);
-          setDetailTodo(null);
-        }).catch((err: any) => {
-          flash(err.message);
-        });
-      } else if (input === "x" && detailTodo) {
-        const todo = detailTodo;
-        confirmActionRef.current = async () => {
-          await mutate((store) => deleteTodo(store, todo.id));
-          flash(`Deleted "${todo.title}"`);
-          setInputMode(null);
-          setDetailTodo(null);
-          confirmActionRef.current = null;
-        };
-        setConfirmMessage(`Delete todo "${todo.title}"?`);
-        setInputMode("confirm");
-      } else if (input === "e" && detailTodo) {
-        setEditTodo(detailTodo);
-        setInputMode("edit");
-        setDetailTodo(null);
-      } else if (input === "w" && detailTodo && detailTodo.status === "open") {
-        setScheduleTodo(detailTodo);
-        setScheduleDate(detailTodo.scheduledDate);
-        setInputMode("schedule");
-        setDetailTodo(null);
-      } else if (input === "m" && detailTodo && detailTodo.status === "open") {
-        setMoveTodo(detailTodo);
-        setMoveCursor(0);
-        setInputMode("move");
-        setDetailTodo(null);
-      } else if (input === "?") {
-        setInputMode("help");
-        setDetailTodo(null);
-      }
-      return;
-    }
+		// Detail modal
+		if (inputMode === "detail") {
+			if (key.escape) {
+				setInputMode(null);
+				setDetailTodo(null);
+			} else if (input === "d" && detailTodo) {
+				const action =
+					detailTodo.status === "open"
+						? (store: any) => completeTodo(store, detailTodo.id)
+						: (store: any) => reopenTodo(store, detailTodo.id);
+				const verb = detailTodo.status === "open" ? "Completed" : "Reopened";
+				mutate(action)
+					.then(() => {
+						flash(`${verb} "${detailTodo.title}"`);
+						setInputMode(null);
+						setDetailTodo(null);
+					})
+					.catch((err: any) => {
+						flash(err.message);
+					});
+			} else if (input === "x" && detailTodo) {
+				const todo = detailTodo;
+				confirmActionRef.current = async () => {
+					await mutate((store) => deleteTodo(store, todo.id));
+					flash(`Deleted "${todo.title}"`);
+					setInputMode(null);
+					setDetailTodo(null);
+					confirmActionRef.current = null;
+				};
+				setConfirmMessage(`Delete todo "${todo.title}"?`);
+				setInputMode("confirm");
+			} else if (input === "e" && detailTodo) {
+				setEditTodo(detailTodo);
+				setInputMode("edit");
+				setDetailTodo(null);
+			} else if (input === "w" && detailTodo && detailTodo.status === "open") {
+				setScheduleTodo(detailTodo);
+				setScheduleDate(detailTodo.scheduledDate);
+				setInputMode("schedule");
+				setDetailTodo(null);
+			} else if (input === "m" && detailTodo && detailTodo.status === "open") {
+				setMoveTodo(detailTodo);
+				setMoveCursor(0);
+				setInputMode("move");
+				setDetailTodo(null);
+			} else if (input === "?") {
+				setInputMode("help");
+				setDetailTodo(null);
+			}
+			return;
+		}
 
-    // Global keys
-    if (input === "q") {
-      exit();
-      return;
-    }
+		// Global keys
+		if (input === "q") {
+			exit();
+			return;
+		}
 
-    if (input === "g") {
-      const next = toggleMode();
-      flash(`Switched to ${next}`);
-      return;
-    }
+		if (input === "g") {
+			const next = toggleMode();
+			flash(`Switched to ${next}`);
+			return;
+		}
 
-    if (key.tab) {
-      nav.toggleFocus();
-      return;
-    }
+		if (key.tab) {
+			nav.toggleFocus();
+			return;
+		}
 
-    // Number keys for view switching
-    const num = parseInt(input, 10);
-    if (num >= 1 && num <= 7) {
-      nav.jumpToView(num);
-      selection.reset();
-      return;
-    }
+		// Number keys for view switching
+		const num = parseInt(input, 10);
+		if (num >= 1 && num <= 7) {
+			nav.jumpToView(num);
+			selection.reset();
+			return;
+		}
 
-    // Pane switching: h/l or left/right arrows
-    if (input === "l" || key.rightArrow) {
-      if (nav.focus === "sidebar") {
-        nav.setFocus("main");
-        return;
-      }
-    }
-    if (input === "h" || key.leftArrow) {
-      if (nav.focus === "main") {
-        nav.setFocus("sidebar");
-        return;
-      }
-    }
+		// Pane switching: h/l or left/right arrows
+		if (input === "l" || key.rightArrow) {
+			if (nav.focus === "sidebar") {
+				nav.setFocus("main");
+				return;
+			}
+		}
+		if (input === "h" || key.leftArrow) {
+			if (nav.focus === "main") {
+				nav.setFocus("sidebar");
+				return;
+			}
+		}
 
-    // Sidebar navigation
-    if (nav.focus === "sidebar") {
-      if (input === "j" || key.downArrow) {
-        setSidebarCursor((c) => Math.min(c + 1, 5));
-      } else if (input === "k" || key.upArrow) {
-        setSidebarCursor((c) => Math.max(c - 1, 0));
-      } else if (key.return) {
-        nav.jumpToView(sidebarCursor + 1);
-        nav.setFocus("main");
-        selection.reset();
-      }
-      return;
-    }
+		// Sidebar navigation
+		if (nav.focus === "sidebar") {
+			if (input === "j" || key.downArrow) {
+				setSidebarCursor((c) => Math.min(c + 1, 5));
+			} else if (input === "k" || key.upArrow) {
+				setSidebarCursor((c) => Math.max(c - 1, 0));
+			} else if (key.return) {
+				nav.jumpToView(sidebarCursor + 1);
+				nav.setFocus("main");
+				selection.reset();
+			}
+			return;
+		}
 
-    // Main panel keys
-    if (input === "j" || key.downArrow) {
-      selection.moveDown();
-    } else if (input === "k" || key.upArrow) {
-      selection.moveUp();
-    } else if (input === "a") {
-      if (nav.view === "projects" && !expandedProjectId) {
-        flash("Expand a project first (Enter) to add a todo");
-        return;
-      }
-      setInputMode("quickadd");
-    } else if (input === "A") {
-      const todo = getSelectedTodo();
-      if (todo && todo.status === "open") {
-        subtaskParentRef.current = todo.id;
-        setInputMode("quickadd");
-      } else {
-        flash("Select a todo to add a subtask");
-      }
-    } else if (input === "d") {
-      handleComplete();
-    } else if (input === "x") {
-      handleDelete();
-    } else if (input === "e") {
-      const todo = getSelectedTodo();
-      if (todo) {
-        setEditTodo(todo);
-        setInputMode("edit");
-      }
-    } else if (input === "m") {
-      handleStartMove();
-    } else if (input === "w") {
-      const todo = getSelectedTodo();
-      if (todo && todo.status === "open") {
-        setScheduleTodo(todo);
-        setScheduleDate(todo.scheduledDate);
-        setInputMode("schedule");
-      }
-    } else if (input === "!") {
-      const todo = getSelectedTodo();
-      if (todo && todo.status === "open") {
-        const cycle = { none: "low", low: "medium", medium: "high", high: "none" } as const;
-        const next = cycle[todo.priority];
-        mutate((store) => updateTodo(store, todo.id, { priority: next }));
-        flash(next === "none" ? "Cleared priority" : `Priority: ${next}`);
-      }
-    } else if (input === "J") {
-      // Shift+J: move todo down in order
-      const todo = getSelectedTodo();
-      if (todo && todo.status === "open") {
-        const items = getViewItems(nav.view, data, showCompleted, sortMode, expandedTodoId);
-        const currentIdx = items.findIndex((t) => t.id === todo.id);
-        if (currentIdx >= 0 && currentIdx < items.length - 1) {
-          mutate((store) => {
-            // Find the next sibling's position and place after it
-            const nextTodo = items[currentIdx + 1];
-            const targetPos = (nextTodo.position ?? 0) + 1;
-            reorderTodo(store, todo.id, currentIdx + 1);
-          });
-          selection.moveDown();
-          flash(`Moved "${todo.title}" down`);
-        }
-      }
-    } else if (input === "K") {
-      // Shift+K: move todo up in order
-      const todo = getSelectedTodo();
-      if (todo && todo.status === "open") {
-        const items = getViewItems(nav.view, data, showCompleted, sortMode, expandedTodoId);
-        const currentIdx = items.findIndex((t) => t.id === todo.id);
-        if (currentIdx > 0) {
-          mutate((store) => {
-            reorderTodo(store, todo.id, currentIdx - 1);
-          });
-          selection.moveUp();
-          flash(`Moved "${todo.title}" up`);
-        }
-      }
-    } else if (input === "s") {
-      setSortMode((m) => {
-        const next = m === "created" ? "alpha" : m === "alpha" ? "due" : "created";
-        flash(`Sort: ${next}`);
-        return next;
-      });
-    } else if (input === "c") {
-      setShowCompleted((v) => !v);
-      flash(showCompleted ? "Hiding completed" : "Showing completed");
-    } else if (input === "u") {
-      undo().then((ok) => {
-        flash(ok ? "Undone" : "Nothing to undo");
-      });
-    } else if (input === "p") {
-      setInputMode("createproject");
-    } else if (input === "?") {
-      setInputMode("help");
-    } else if (input === "/") {
-      nav.setView("search");
-      nav.setFocus("main");
-      setInputMode("search");
-      setSearchQuery("");
-      selection.reset();
-    } else if (key.return) {
-      // Enter: toggle expansion or show detail
-      if (nav.view === "projects") {
-        const rows = getProjectRows(data, expandedProjectId, false, sortMode);
-        const row = rows[selection.cursor];
-        if (row?.type === "project") {
-          setExpandedProjectId(
-            expandedProjectId === row.project.id ? null : row.project.id,
-          );
-        } else if (row?.type === "todo") {
-          setDetailTodo(row.todo);
-          setInputMode("detail");
-        }
-      } else {
-        const todo = getSelectedTodo();
-        if (todo) {
-          const subs = data.todos.filter((t) => t.parentId === todo.id);
-          if (subs.length > 0 && !todo.parentId) {
-            setExpandedTodoId((prev) => prev === todo.id ? null : todo.id);
-          } else {
-            setDetailTodo(todo);
-            setInputMode("detail");
-          }
-        }
-      }
-    }
-  });
+		// Main panel keys
+		if (input === "j" || key.downArrow) {
+			selection.moveDown();
+		} else if (input === "k" || key.upArrow) {
+			selection.moveUp();
+		} else if (input === "a") {
+			if (nav.view === "projects" && !expandedProjectId) {
+				flash("Expand a project first (Enter) to add a todo");
+				return;
+			}
+			setInputMode("quickadd");
+		} else if (input === "A") {
+			const todo = getSelectedTodo();
+			if (todo && todo.status === "open") {
+				subtaskParentRef.current = todo.id;
+				setInputMode("quickadd");
+			} else {
+				flash("Select a todo to add a subtask");
+			}
+		} else if (input === "d") {
+			handleComplete();
+		} else if (input === "x") {
+			handleDelete();
+		} else if (input === "e") {
+			const todo = getSelectedTodo();
+			if (todo) {
+				setEditTodo(todo);
+				setInputMode("edit");
+			}
+		} else if (input === "m") {
+			handleStartMove();
+		} else if (input === "w") {
+			const todo = getSelectedTodo();
+			if (todo && todo.status === "open") {
+				setScheduleTodo(todo);
+				setScheduleDate(todo.scheduledDate);
+				setInputMode("schedule");
+			}
+		} else if (input === "!") {
+			const todo = getSelectedTodo();
+			if (todo && todo.status === "open") {
+				const cycle = {
+					none: "low",
+					low: "medium",
+					medium: "high",
+					high: "none",
+				} as const;
+				const next = cycle[todo.priority];
+				mutate((store) => updateTodo(store, todo.id, { priority: next }));
+				flash(next === "none" ? "Cleared priority" : `Priority: ${next}`);
+			}
+		} else if (input === "J") {
+			// Shift+J: move down in order (todo or project)
+			if (nav.view === "projects") {
+				const rows = getProjectRows(
+					data,
+					expandedProjectId,
+					showCompleted,
+					sortMode,
+				);
+				const row = rows[selection.cursor];
+				if (row?.type === "project" && row.project.status === "active") {
+					const activeProjs = [...data.projects]
+						.filter((p) => p.status === "active")
+						.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+					const idx = activeProjs.findIndex((p) => p.id === row.project.id);
+					if (idx >= 0 && idx < activeProjs.length - 1) {
+						mutate((store) => {
+							reorderProject(store, row.project.id, idx + 1);
+						});
+						// Move cursor to the new position of this project (next row down if no expansion)
+						selection.moveDown();
+						flash(`Moved "${row.project.title}" down`);
+					}
+					return;
+				}
+			}
+			const todo = getSelectedTodo();
+			if (todo && todo.status === "open") {
+				const items = getViewItems(
+					nav.view,
+					data,
+					showCompleted,
+					sortMode,
+					expandedTodoId,
+				);
+				const currentIdx = items.findIndex((t) => t.id === todo.id);
+				if (currentIdx >= 0 && currentIdx < items.length - 1) {
+					mutate((store) => {
+						// Find the next sibling's position and place after it
+						const nextTodo = items[currentIdx + 1];
+						const targetPos = (nextTodo.position ?? 0) + 1;
+						reorderTodo(store, todo.id, currentIdx + 1);
+					});
+					selection.moveDown();
+					flash(`Moved "${todo.title}" down`);
+				}
+			}
+		} else if (input === "K") {
+			// Shift+K: move up in order (todo or project)
+			if (nav.view === "projects") {
+				const rows = getProjectRows(
+					data,
+					expandedProjectId,
+					showCompleted,
+					sortMode,
+				);
+				const row = rows[selection.cursor];
+				if (row?.type === "project" && row.project.status === "active") {
+					const activeProjs = [...data.projects]
+						.filter((p) => p.status === "active")
+						.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+					const idx = activeProjs.findIndex((p) => p.id === row.project.id);
+					if (idx > 0) {
+						mutate((store) => {
+							reorderProject(store, row.project.id, idx - 1);
+						});
+						selection.moveUp();
+						flash(`Moved "${row.project.title}" up`);
+					}
+					return;
+				}
+			}
+			const todo = getSelectedTodo();
+			if (todo && todo.status === "open") {
+				const items = getViewItems(
+					nav.view,
+					data,
+					showCompleted,
+					sortMode,
+					expandedTodoId,
+				);
+				const currentIdx = items.findIndex((t) => t.id === todo.id);
+				if (currentIdx > 0) {
+					mutate((store) => {
+						reorderTodo(store, todo.id, currentIdx - 1);
+					});
+					selection.moveUp();
+					flash(`Moved "${todo.title}" up`);
+				}
+			}
+		} else if (input === "s") {
+			setSortMode((m) => {
+				const next =
+					m === "created" ? "alpha" : m === "alpha" ? "due" : "created";
+				flash(`Sort: ${next}`);
+				return next;
+			});
+		} else if (input === "c") {
+			setShowCompleted((v) => !v);
+			flash(showCompleted ? "Hiding completed" : "Showing completed");
+		} else if (input === "u") {
+			undo().then((ok) => {
+				flash(ok ? "Undone" : "Nothing to undo");
+			});
+		} else if (input === "p") {
+			setInputMode("createproject");
+		} else if (input === "P") {
+			// Shift+P: convert selected todo into a new project
+			const todo = getSelectedTodo();
+			if (!todo) {
+				flash("Select a todo to convert");
+			} else if (todo.parentId) {
+				flash("Cannot convert a subtask; convert its parent instead");
+			} else if (todo.status !== "open") {
+				flash("Only open todos can be converted");
+			} else {
+				const todoTitle = todo.title;
+				confirmActionRef.current = async () => {
+					try {
+						await mutate((store) => convertTodoToProject(store, todo.id));
+						flash(`Converted "${todoTitle}" into a project`);
+					} catch (err: any) {
+						flash(err.message);
+					}
+					setInputMode(null);
+					confirmActionRef.current = null;
+				};
+				setConfirmMessage(`Convert "${todoTitle}" into a project?`);
+				setInputMode("confirm");
+			}
+		} else if (input === "?") {
+			setInputMode("help");
+		} else if (input === "/") {
+			nav.setView("search");
+			nav.setFocus("main");
+			setInputMode("search");
+			setSearchQuery("");
+			selection.reset();
+		} else if (key.return) {
+			// Enter: toggle expansion or show detail
+			if (nav.view === "projects") {
+				const rows = getProjectRows(data, expandedProjectId, false, sortMode);
+				const row = rows[selection.cursor];
+				if (row?.type === "project") {
+					setExpandedProjectId(
+						expandedProjectId === row.project.id ? null : row.project.id,
+					);
+				} else if (row?.type === "todo") {
+					setDetailTodo(row.todo);
+					setInputMode("detail");
+				}
+			} else {
+				const todo = getSelectedTodo();
+				if (todo) {
+					const subs = data.todos.filter((t) => t.parentId === todo.id);
+					if (subs.length > 0 && !todo.parentId) {
+						setExpandedTodoId((prev) => (prev === todo.id ? null : todo.id));
+					} else {
+						setDetailTodo(todo);
+						setInputMode("detail");
+					}
+				}
+			}
+		}
+	});
 
-  if (loading) {
-    return (
-      <Box padding={1}>
-        <Text color={colors.fgDim}>Loading...</Text>
-      </Box>
-    );
-  }
+	if (loading) {
+		return (
+			<Box padding={1}>
+				<Text color={colors.fgDim}>Loading...</Text>
+			</Box>
+		);
+	}
 
-  if (error) {
-    return (
-      <Box padding={1}>
-        <Text color={colors.danger}>{error}</Text>
-      </Box>
-    );
-  }
+	if (error) {
+		return (
+			<Box padding={1}>
+				<Text color={colors.danger}>{error}</Text>
+			</Box>
+		);
+	}
 
-  const activeProjects = data.projects.filter((p) => p.status === "active");
-  const activeProject = getActiveProject();
+	const activeProjects = data.projects.filter((p) => p.status === "active");
+	const activeProject = getActiveProject();
 
-  return (
-    <Box flexDirection="column" height={termHeight}>
-      {/* Main layout */}
-      <Box flexGrow={1}>
-        <Sidebar
-          view={nav.view}
-          focus={nav.focus}
-          sidebarCursor={sidebarCursor}
-          data={data}
-          storePath={storePath}
-          storeMode={mode}
-        />
-        <MainPanel
-          view={nav.view}
-          data={data}
-          cursor={selection.cursor}
-          scrollOffset={selection.scrollOffset}
-          viewportHeight={viewportHeight}
-          isFocused={nav.focus === "main"}
-          expandedProjectId={expandedProjectId}
-          expandedTodoId={expandedTodoId}
-          showCompleted={showCompleted}
-          sortMode={sortMode}
-          isSearchInputActive={inputMode === "search"}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          onSearchSubmit={() => {
-            setInputMode(null);
-            selection.reset();
-          }}
-        />
-      </Box>
+	return (
+		<Box flexDirection="column" height={termHeight}>
+			{/* Main layout */}
+			<Box flexGrow={1}>
+				<Sidebar
+					view={nav.view}
+					focus={nav.focus}
+					sidebarCursor={sidebarCursor}
+					data={data}
+					storePath={storePath}
+					storeMode={mode}
+				/>
+				<MainPanel
+					view={nav.view}
+					data={data}
+					cursor={selection.cursor}
+					scrollOffset={selection.scrollOffset}
+					viewportHeight={viewportHeight}
+					isFocused={nav.focus === "main"}
+					expandedProjectId={expandedProjectId}
+					expandedTodoId={expandedTodoId}
+					showCompleted={showCompleted}
+					sortMode={sortMode}
+					isSearchInputActive={inputMode === "search"}
+					searchQuery={searchQuery}
+					onSearchChange={setSearchQuery}
+					onSearchSubmit={() => {
+						setInputMode(null);
+						selection.reset();
+					}}
+				/>
+			</Box>
 
-      {/* Detail overlay */}
-      {inputMode === "detail" && detailTodo && (
-        <TodoDetail todo={detailTodo} data={data} subtasks={getSubtasks(data, detailTodo.id)} />
-      )}
+			{/* Detail overlay */}
+			{inputMode === "detail" && detailTodo && (
+				<TodoDetail
+					todo={detailTodo}
+					data={data}
+					subtasks={getSubtasks(data, detailTodo.id)}
+				/>
+			)}
 
-      {/* Quick add input */}
-      {inputMode === "quickadd" && (
-        <QuickAdd
-          onSubmit={handleQuickAdd}
-          onCancel={() => { setInputMode(null); subtaskParentRef.current = null; }}
-          contextProject={activeProject?.title}
-          contextSubtask={subtaskParentRef.current ? data.todos.find((t) => t.id === subtaskParentRef.current)?.title ?? null : null}
-        />
-      )}
+			{/* Quick add input */}
+			{inputMode === "quickadd" && (
+				<QuickAdd
+					onSubmit={handleQuickAdd}
+					onCancel={() => {
+						setInputMode(null);
+						subtaskParentRef.current = null;
+					}}
+					contextProject={activeProject?.title}
+					contextSubtask={
+						subtaskParentRef.current
+							? (data.todos.find((t) => t.id === subtaskParentRef.current)
+									?.title ?? null)
+							: null
+					}
+				/>
+			)}
 
-      {/* Edit todo input */}
-      {inputMode === "edit" && editTodo && (
-        <EditTodo
-          todo={editTodo}
-          onSubmit={handleEditSubmit}
-          onCancel={() => { setInputMode(null); setEditTodo(null); }}
-        />
-      )}
+			{/* Edit todo input */}
+			{inputMode === "edit" && editTodo && (
+				<EditTodo
+					todo={editTodo}
+					onSubmit={handleEditSubmit}
+					onCancel={() => {
+						setInputMode(null);
+						setEditTodo(null);
+					}}
+				/>
+			)}
 
-      {/* Create project input */}
-      {inputMode === "createproject" && (
-        <ProjectAdd onSubmit={handleCreateProject} onCancel={() => setInputMode(null)} />
-      )}
+			{/* Create project input */}
+			{inputMode === "createproject" && (
+				<ProjectAdd
+					onSubmit={handleCreateProject}
+					onCancel={() => setInputMode(null)}
+				/>
+			)}
 
-      {/* Schedule picker */}
-      {inputMode === "schedule" && scheduleTodo && (
-        <SchedulePicker
-          todoTitle={scheduleTodo.title}
-          currentDate={scheduleDate}
-        />
-      )}
+			{/* Schedule picker */}
+			{inputMode === "schedule" && scheduleTodo && (
+				<SchedulePicker
+					todoTitle={scheduleTodo.title}
+					currentDate={scheduleDate}
+				/>
+			)}
 
-      {/* Move to project picker */}
-      {inputMode === "move" && moveTodo && (
-        <ProjectPicker
-          projects={activeProjects}
-          cursor={moveCursor}
-          todoTitle={moveTodo.title}
-        />
-      )}
+			{/* Move to project picker */}
+			{inputMode === "move" && moveTodo && (
+				<ProjectPicker
+					projects={filterProjectsForMove(data, moveQuery)}
+					cursor={moveCursor}
+					todoTitle={moveTodo.title}
+					query={moveQuery}
+				/>
+			)}
 
-      {/* Help overlay */}
-      {inputMode === "help" && <HelpDialog />}
+			{/* Help overlay */}
+			{inputMode === "help" && <HelpDialog />}
 
-      {/* Confirm dialog */}
-      {inputMode === "confirm" && (
-        <ConfirmDialog message={confirmMessage} />
-      )}
+			{/* Confirm dialog */}
+			{inputMode === "confirm" && <ConfirmDialog message={confirmMessage} />}
 
-      {/* Status bar */}
-      <StatusBar
-        view={nav.view}
-        inputMode={inputMode}
-        message={message}
-        showCompleted={showCompleted}
-        storeMode={mode}
-      />
-    </Box>
-  );
+			{/* Status bar */}
+			<StatusBar
+				view={nav.view}
+				inputMode={inputMode}
+				message={message}
+				showCompleted={showCompleted}
+				storeMode={mode}
+			/>
+		</Box>
+	);
 }
