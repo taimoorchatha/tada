@@ -1,8 +1,16 @@
 {
   "name": "@taimoorchatha/tada",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "A CLI todo app.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taimoorchatha/tada.git"
+  },
+  "homepage": "https://github.com/taimoorchatha/tada#readme",
+  "bugs": {
+    "url": "https://github.com/taimoorchatha/tada/issues"
+  },
   "bin": {
     "tada": "./dist/cli/index.js"
   },

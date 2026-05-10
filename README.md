@@ -1,9 +1,25 @@
 # tada
 
+```
++------------------+-------------------------------+
+| Sidebar          | Main Panel                    |
+|                  |                               |
+| 1 Inbox     (3)  |   Inbox (3)                  |
+| 2 Today     (1)  |                              |
+| 3 Upcoming       |   > o Task one               |
+| 4 Projects  (1)  |     o Task two               |
+| 5 Areas          |     > Subtask a              |
+| 6 Logbook   (2)  |     o Task three             |
+| 7 Search         |                              |
++------------------+-------------------------------+
+| hjkl:nav  a:add  d:done  x:del  u:undo  ?:help  |
++--------------------------------------------------+
+```
+
 A CLI todo manager with TUI and MCP server for AI assistants.
 
 ```
-npm install -g tadacli
+npm install -g @taimoorchatha/tada
 ```
 
 ## Quick Start
@@ -53,24 +69,6 @@ tada -g ls                    # Use global store (~/.tada)
 ## TUI
 
 Run `tada` to launch the interactive terminal UI.
-
-### Layout
-
-```
-+------------------+-------------------------------+
-| Sidebar          | Main Panel                    |
-|                  |                               |
-| 1 Inbox     (3)  |   Inbox (3)                  |
-| 2 Today     (1)  |                              |
-| 3 Upcoming       |   > o Task one               |
-| 4 Projects  (1)  |     o Task two               |
-| 5 Areas          |     > Subtask a              |
-| 6 Logbook   (2)  |     o Task three             |
-| 7 Search         |                              |
-+------------------+-------------------------------+
-| hjkl:nav  a:add  d:done  x:del  u:undo  ?:help  |
-+--------------------------------------------------+
-```
 
 ### Keybindings
 
