@@ -18,6 +18,10 @@
     ".": "./dist/core/index.js",
     "./mcp": "./dist/mcp/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/cli/index.ts",
