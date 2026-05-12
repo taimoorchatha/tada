@@ -377,7 +377,29 @@ export function App() {
 	const handleConfirmMove = useCallback(async () => {
 		if (!moveTodo) return;
 		const filtered = filterProjectsForMove(data, moveQuery);
-		// cursor 0 = inbox (null), cursor 1+ = project
+		const createIdx = filtered.length + 1;
+
+		// cursor 0 = inbox; 1..N = project; N+1 = create-new
+		if (moveCursor === createIdx) {
+			const title = moveQuery.trim();
+			if (!title) {
+				flash("Type a project name to create");
+				return;
+			}
+			let newProjectId: string | null = null;
+			await mutate((store) => {
+				const project = createProject(store, { title });
+				newProjectId = project.id;
+				updateTodo(store, moveTodo.id, { projectId: project.id });
+			});
+			flash(`Created "${title}" and moved "${moveTodo.title}" into it`);
+			setInputMode(null);
+			setMoveTodo(null);
+			setMoveQuery("");
+			void newProjectId;
+			return;
+		}
+
 		const targetProject =
 			moveCursor === 0 ? null : (filtered[moveCursor - 1] ?? null);
 		const projectId = targetProject?.id ?? null;
@@ -450,7 +472,7 @@ export function App() {
 		// Handle move-to-project picker
 		if (inputMode === "move") {
 			const filtered = filterProjectsForMove(data, moveQuery);
-			const maxIdx = filtered.length; // 0=inbox, 1..n=projects
+			const maxIdx = filtered.length + 1; // 0=inbox, 1..n=project, n+1=create-new
 			if (key.upArrow) {
 				setMoveCursor((c) => Math.max(c - 1, 0));
 			} else if (key.downArrow) {
