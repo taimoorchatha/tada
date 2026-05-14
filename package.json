@@ -1,6 +1,6 @@
 {
   "name": "@taimoorchatha/tada",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Things-inspired CLI todo manager with TUI and MCP server for AI coding assistants like Claude Code.",
   "keywords": [
     "todo",
