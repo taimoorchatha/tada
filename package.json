@@ -1,7 +1,29 @@
 {
   "name": "@taimoorchatha/tada",
   "version": "0.1.5",
-  "description": "A CLI todo app.",
+  "description": "Things-inspired CLI todo manager with TUI and MCP server for AI coding assistants like Claude Code.",
+  "keywords": [
+    "todo",
+    "todos",
+    "cli",
+    "tui",
+    "mcp",
+    "claude",
+    "claude-code",
+    "ai",
+    "ai-assistant",
+    "task-manager",
+    "tasks",
+    "terminal",
+    "things",
+    "productivity",
+    "gtd",
+    "ink",
+    "react",
+    "typescript"
+  ],
+  "author": "Taimoor Chatha",
+  "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
@@ -20,7 +42,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup",

@@ -1,5 +1,9 @@
 # tada
 
+[![npm version](https://img.shields.io/npm/v/@taimoorchatha/tada.svg)](https://www.npmjs.com/package/@taimoorchatha/tada)
+[![npm downloads](https://img.shields.io/npm/dm/@taimoorchatha/tada.svg)](https://www.npmjs.com/package/@taimoorchatha/tada)
+[![license](https://img.shields.io/npm/l/@taimoorchatha/tada.svg)](./LICENSE)
+
 ```
 +------------------+-------------------------------+
 | Sidebar          | Main Panel                    |
